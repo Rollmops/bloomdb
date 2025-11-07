@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"os"
+	"os/exec"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
-
-	"bloomdb/logger"
 
 	"github.com/spf13/cobra"
 )
@@ -18,6 +18,7 @@ var (
 	logLevel            string
 	versionTableName    string
 	postMigrationScript string
+	verbose             bool
 	globalSetup         *DatabaseSetup
 	globalSetupMu       sync.RWMutex
 )
@@ -27,21 +28,42 @@ var rootCmd = &cobra.Command{
 	Short: "BloomDB CLI tool",
 	Long:  "A CLI tool for database migration management",
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		// Initialize logger with specified log level
-		logger.Init(logger.LogLevel(logLevel))
+		// Set verbose flag in environment for printer
+		if verbose {
+			os.Setenv("BLOOMDB_VERBOSE", "true")
+		}
+
+		// Initialize printer based on BLOOMDB_PRINTER env var (json or human)
+		InitPrinter()
 
 		if dbConnStr == "" {
 			dbConnStr = os.Getenv("BLOOMDB_CONNECT_STRING")
 		}
 
 		if dbConnStr == "" {
-			logger.Fatal("connection string is required (use --conn or BLOOMDB_CONNECT_STRING env var)")
+			// Try to get connection string from command
+			if connectCmd := os.Getenv("BLOOMDB_CONNECT_STRING_CMD"); connectCmd != "" {
+				output, err := exec.Command("sh", "-c", connectCmd).Output()
+				if err != nil {
+					PrintError("Failed to execute connection string command: " + err.Error())
+					os.Exit(1)
+				}
+				dbConnStr = strings.TrimSpace(string(output))
+				if dbConnStr == "" {
+					PrintError("Connection string command returned empty output")
+					os.Exit(1)
+				}
+			}
 		}
 
-		// Handle baseline version: environment -> default
-		if envVersion := os.Getenv("BLOOMDB_BASELINE_VERSION"); envVersion != "" {
-			baselineVersion = envVersion
+		if dbConnStr == "" {
+			PrintError("connection string is required (use --conn, BLOOMDB_CONNECT_STRING, or BLOOMDB_CONNECT_STRING_CMD env var)")
+			os.Exit(1)
 		}
+
+		// Note: Baseline version resolution is now deferred until needed
+		// to allow checking for existing baseline records first.
+		// Use ResolveBaselineVersion() in commands that need baseline version.
 
 		// Handle migration path: flag -> environment -> default
 		// Note: Cobra sets the default, so we need to check if it was explicitly set
@@ -83,12 +105,10 @@ func SetGlobalDatabaseSetup(setup *DatabaseSetup) {
 
 	// Close any existing database setup
 	if globalSetup != nil && globalSetup.Database != nil {
-		logger.Debug("Closing previous global database connection")
 		globalSetup.Database.Close()
 	}
 
 	globalSetup = setup
-	logger.Debug("Global database setup registered for cleanup")
 }
 
 // GetGlobalDatabaseSetup returns the current global database setup
@@ -105,24 +125,23 @@ func setupGlobalCleanup() {
 
 	go func() {
 		sig := <-c
-		logger.Infof("Received signal %v, shutting down gracefully...", sig)
+		PrintInfo("Received signal %v, shutting down gracefully...", sig)
 		cleanupGlobalDatabase()
 		os.Exit(0)
 	}()
 
-	// Also set up cleanup on normal exit
+	// Register cleanup on exit
 	defer cleanupGlobalDatabase()
 }
 
-// cleanupGlobalDatabase closes the global database connection if it exists
+// cleanupGlobalDatabase cleans up the global database connection
 func cleanupGlobalDatabase() {
 	globalSetupMu.Lock()
 	defer globalSetupMu.Unlock()
 
 	if globalSetup != nil && globalSetup.Database != nil {
-		logger.Debug("Cleaning up global database connection")
 		globalSetup.Database.Close()
-		globalSetup.Database = nil
+		globalSetup = nil
 	}
 }
 
@@ -153,6 +172,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&versionTableName, "table-name", "BLOOMDB_VERSION", "Version table name (env: BLOOMDB_VERSION_TABLE_NAME)")
 	rootCmd.PersistentFlags().StringVar(&postMigrationScript, "post-migration-script", "", "Path to post-migration SQL script (env: BLOOMDB_POST_MIGRATION_SCRIPT)")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "warn", "Log level (debug, info, warn, error, fatal, panic)")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output (env: BLOOMDB_VERBOSE)")
 
 	// Add subcommands
 	rootCmd.AddCommand(migrateCmd)

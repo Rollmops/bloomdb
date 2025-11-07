@@ -5,65 +5,53 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	"bloomdb/logger"
 )
 
 type DestroyCommand struct{}
 
 func (d *DestroyCommand) Run() {
-	logger.Warn("Starting destroy command - this is a destructive operation")
+	PrintWarning("Starting destroy command - this is a destructive operation")
 
 	// Setup database connection
 	setup := SetupDatabase()
-	logger.Infof("Connected to %s database", setup.DBType)
 
-	logger.Warnf("This will destroy ALL database objects in %s database!", setup.DBType)
-	logger.Warn("This includes tables, views, indexes, triggers, and all data.")
-	logger.Warn("This operation cannot be undone.")
-
-	fmt.Printf("WARNING: This will destroy ALL database objects in %s database!\n", setup.DBType)
-	fmt.Printf("This includes tables, views, indexes, triggers, and all data.\n")
-	fmt.Printf("This operation cannot be undone.\n")
-	fmt.Println()
+	PrintWarning("This will destroy ALL database objects in " + string(setup.DBType) + " database!")
+	PrintWarning("This includes tables, views, indexes, triggers, and all data.")
+	PrintWarning("This operation cannot be undone.")
+	PrintInfo("")
 
 	// Get confirmation from user
 	if !getConfirmation() {
-		logger.Info("Destroy operation cancelled by user")
-		fmt.Println("Destroy operation cancelled.")
+		PrintInfo("Destroy operation cancelled.")
 		return
 	}
 
-	logger.Info("User confirmed destroy operation - proceeding with destruction")
-	fmt.Println("Destroying all database objects...")
+	PrintInfo("User confirmed destroy operation - proceeding with destruction")
+	PrintInfo("Destroying all database objects...")
 
 	// Drop all objects based on database type
 	err := setup.Database.DestroyAllObjects()
 	if err != nil {
-		logger.Errorf("Error destroying database objects: %v", err)
-		fmt.Printf("Error destroying database objects: %v\n", err)
+		PrintError("Error destroying database objects: " + err.Error())
 		return
 	}
 
-	logger.Warn("Successfully destroyed all database objects")
-	fmt.Println("Successfully destroyed all database objects.")
+	PrintSuccess("Successfully destroyed all database objects.")
 }
 
 // getConfirmation gets user confirmation before proceeding with destroy
 func getConfirmation() bool {
-	fmt.Printf("Type 'DESTROY' to confirm: ")
+	fmt.Print("Type 'DESTROY' to confirm: ")
 
 	reader := bufio.NewReader(os.Stdin)
 	input, err := reader.ReadString('\n')
 	if err != nil {
-		logger.Errorf("Error reading user input: %v", err)
-		fmt.Printf("Error reading input: %v\n", err)
+		PrintError("Error reading input: " + err.Error())
 		return false
 	}
 
 	// Trim whitespace and convert to uppercase
 	input = strings.TrimSpace(strings.ToUpper(input))
-	logger.Debugf("User confirmation input: %s", input)
 
 	return input == "DESTROY"
 }

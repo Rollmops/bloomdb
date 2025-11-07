@@ -44,6 +44,10 @@ var baselineCmd = &cobra.Command{
 	},
 }
 
+func init() {
+	baselineCmd.Flags().StringVar(&baselineVersion, "version", "", "Baseline version (env: BLOOMDB_BASELINE_VERSION)")
+}
+
 var destroyCmd = &cobra.Command{
 	Use:   "destroy",
 	Short: "Destroy all database objects",

@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"bloomdb/db"
-	"bloomdb/logger"
 )
 
 // DatabaseSetup holds the common database connection and configuration
@@ -21,7 +20,8 @@ type DatabaseSetup struct {
 func SetupDatabase() *DatabaseSetup {
 	// Validate connection string
 	if dbConnStr == "" {
-		logger.Fatal("connection string is required")
+		PrintError("connection string is required")
+		os.Exit(1)
 	}
 
 	var database db.Database
@@ -32,7 +32,7 @@ func SetupDatabase() *DatabaseSetup {
 	// Use defer to ensure cleanup on any error during setup
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Errorf("Panic during database setup: %v", r)
+			PrintError(fmt.Sprintf("Panic during database setup: %v", r))
 			if database != nil {
 				database.Close()
 			}
@@ -43,7 +43,8 @@ func SetupDatabase() *DatabaseSetup {
 	// Create database instance
 	database, err := db.NewDatabaseFromConnectionString(dbConnStr)
 	if err != nil {
-		logger.Fatalf("Error creating database: %v", err)
+		PrintError(fmt.Sprintf("Error creating database: %v", err))
+		os.Exit(1)
 	}
 
 	// Extract connection string
@@ -52,29 +53,30 @@ func SetupDatabase() *DatabaseSetup {
 		if database != nil {
 			database.Close()
 		}
-		logger.Fatalf("Error extracting connection string: %v", extractErr)
+		PrintError(fmt.Sprintf("Error extracting connection string: %v", extractErr))
+		os.Exit(1)
 	}
 
 	// Connect to database
-	logger.Debugf("Connecting to database with connection string: %s", connStr)
 	err = database.Connect(connStr)
 	if err != nil {
 		if database != nil {
 			database.Close()
 		}
-		logger.Fatalf("Error connecting to database: %v", err)
+		PrintError(fmt.Sprintf("Error connecting to database: %v", err))
+		os.Exit(1)
 	}
 
 	// Test connection
-	logger.Debug("Testing database connection")
 	err = database.Ping()
 	if err != nil {
 		if database != nil {
 			database.Close()
 		}
-		logger.Fatalf("Error pinging database: %v", err)
+		PrintError(fmt.Sprintf("Error pinging database: %v", err))
+		os.Exit(1)
 	}
-	logger.Debug("Database connection test successful")
+	PrintInfo("Database connection test successful")
 
 	// Get database type
 	dbType, parseErr := db.ParseDatabaseType(dbConnStr)
@@ -82,13 +84,12 @@ func SetupDatabase() *DatabaseSetup {
 		if database != nil {
 			database.Close()
 		}
-		logger.Fatalf("Error parsing database type: %v", parseErr)
+		PrintError(fmt.Sprintf("Error parsing database type: %v", parseErr))
+		os.Exit(1)
 	}
-	logger.Infof("Detected database type: %s", dbType)
 
 	// Get table name from command configuration
 	tableName = GetVersionTableName()
-	logger.Debugf("Migration table name: %s", tableName)
 
 	setup := &DatabaseSetup{
 		Database:  database,
@@ -103,86 +104,165 @@ func SetupDatabase() *DatabaseSetup {
 	return setup
 }
 
-// EnsureTableExists checks if the migration table exists, exits with error if it doesn't
-func (ds *DatabaseSetup) EnsureTableExists() {
-	logger.Debugf("Checking if migration table '%s' exists", ds.TableName)
-	tableExists, err := ds.Database.TableExists(ds.TableName)
-	if err != nil {
-		logger.Errorf("Error checking table existence: %v", err)
-		ds.Database.Close()
-		os.Exit(1)
-	}
-
-	if !tableExists {
-		logger.Fatalf("Table '%s' does not exist", ds.TableName)
-	}
-	logger.Debugf("Migration table '%s' exists", ds.TableName)
-}
-
-// EnsureTableNotExists checks if the migration table doesn't exist, exits with error if it does
-func (ds *DatabaseSetup) EnsureTableNotExists() {
-	logger.Debugf("Checking if migration table '%s' does not exist", ds.TableName)
-	tableExists, err := ds.Database.TableExists(ds.TableName)
-	if err != nil {
-		logger.Errorf("Error checking if table %s exists: %v", ds.TableName, err)
-		ds.Database.Close()
-		os.Exit(1)
-	}
-
-	if tableExists {
-		logger.Fatalf("Migration table '%s' already exists - have you already run the baseline command?", ds.TableName)
-	}
-	logger.Debugf("Migration table '%s' does not exist as expected", ds.TableName)
-}
-
-// CreateMigrationTable creates the migration table
 func (ds *DatabaseSetup) CreateMigrationTable() error {
-	fmt.Printf("Creating migration table: %s\n", ds.TableName)
-	logger.Infof("Creating migration table: %s", ds.TableName)
 	err := ds.Database.CreateMigrationTable(ds.TableName)
 	if err != nil {
-		logger.Errorf("Failed to create migration table %s: %v", ds.TableName, err)
+		PrintError(fmt.Sprintf("Failed to create migration table %s: %v", ds.TableName, err))
 		return fmt.Errorf("failed to create migration table %s: %w", ds.TableName, err)
 	}
-	logger.Infof("Migration table %s created successfully", ds.TableName)
 	return nil
 }
 
 // InsertBaselineRecord inserts a baseline record into the migration table
 func (ds *DatabaseSetup) InsertBaselineRecord(version string) error {
-	fmt.Printf("Inserting baseline record for version: %s\n", version)
-	logger.Infof("Inserting baseline record for version: %s", version)
 	err := ds.Database.InsertBaselineRecord(ds.TableName, version)
 	if err != nil {
-		logger.Errorf("Failed to insert baseline record: %v", err)
+		PrintError(fmt.Sprintf("Failed to insert baseline record: %v", err))
 		return fmt.Errorf("failed to insert baseline record: %w", err)
 	}
-	logger.Info("Baseline record inserted successfully")
 	return nil
 }
 
 // GetMigrationRecords retrieves all migration records from the database
 func (ds *DatabaseSetup) GetMigrationRecords() ([]db.MigrationRecord, error) {
-	logger.Debugf("Retrieving migration records from table: %s", ds.TableName)
 	return ds.Database.GetMigrationRecords(ds.TableName)
 }
 
 // InsertMigrationRecord inserts a migration record into the database
 func (ds *DatabaseSetup) InsertMigrationRecord(record db.MigrationRecord) error {
-	logger.Debugf("Inserting migration record: %s (%s)", record.Description, record.Type)
 	return ds.Database.InsertMigrationRecord(ds.TableName, record)
+}
+
+// DeleteFailedMigrationRecords removes all unsuccessful migration records from the version table
+func (ds *DatabaseSetup) UpdateMigrationRecord(installedRank int, version, description string, checksum int64) error {
+	return ds.Database.UpdateMigrationRecord(ds.TableName, installedRank, version, description, checksum)
+}
+
+func (ds *DatabaseSetup) UpdateMigrationRecordFull(record db.MigrationRecord) error {
+	return ds.Database.UpdateMigrationRecordFull(ds.TableName, record)
+}
+
+func (ds *DatabaseSetup) DeleteFailedMigrationRecords() error {
+	return ds.Database.DeleteFailedMigrationRecords(ds.TableName)
+}
+
+// CheckBaselineRecordExists checks if a baseline record exists in the version table
+func (ds *DatabaseSetup) CheckBaselineRecordExists() (bool, string, error) {
+	records, err := ds.Database.GetMigrationRecords(ds.TableName)
+	if err != nil {
+		return false, "", fmt.Errorf("failed to get migration records: %w", err)
+	}
+
+	for _, record := range records {
+		if record.Type == "BASELINE" && record.Version != nil {
+			PrintInfo(fmt.Sprintf("Found baseline record for version: %s", *record.Version))
+			return true, *record.Version, nil
+		}
+	}
+
+	PrintInfo(fmt.Sprintf("No baseline record found in %s", ds.TableName))
+	return false, "", nil
+}
+
+// EnsureTableAndBaselineExist checks if both the migration table and baseline record exist
+func (ds *DatabaseSetup) EnsureTableAndBaselineExist() {
+	tableExists, err := ds.Database.TableExists(ds.TableName)
+	if err != nil {
+		PrintError(fmt.Sprintf("Error checking table existence: %v", err))
+		ds.Database.Close()
+		os.Exit(1)
+	}
+
+	if !tableExists {
+		PrintError(fmt.Sprintf("Migration table '%s' does not exist - have you run the baseline command?", ds.TableName))
+		ds.Database.Close()
+		os.Exit(1)
+	}
+
+	// Check for baseline record
+	baselineExists, baselineVersion, err := ds.CheckBaselineRecordExists()
+	if err != nil {
+		PrintError(fmt.Sprintf("Error checking baseline record: %v", err))
+		ds.Database.Close()
+		os.Exit(1)
+	}
+
+	if !baselineExists {
+		PrintError(fmt.Sprintf("No baseline record found in migration table '%s' - have you run the baseline command?", ds.TableName))
+		ds.Database.Close()
+		os.Exit(1)
+	}
+
+	PrintInfo(fmt.Sprintf("Migration table '%s' exists with baseline record version %s", ds.TableName, baselineVersion))
 }
 
 // ExecuteMigration executes a migration SQL script
 func (ds *DatabaseSetup) ExecuteMigration(content string) error {
-	logger.Debugf("Executing migration SQL script")
 	return ds.Database.ExecuteMigration(content)
 }
 
 // Close closes the database connection
 func (ds *DatabaseSetup) Close() {
 	if ds.Database != nil {
-		logger.Debug("Closing database connection")
 		ds.Database.Close()
 	}
+}
+
+// ResolveBaselineVersion determines the baseline version using the correct priority:
+// 1. Existing baseline record in database (if table and record exist)
+// 2. CLI flag value (if provided)
+// 3. Environment variable (BLOOMDB_BASELINE_VERSION)
+// 4. Default value ("1")
+func ResolveBaselineVersion(setup *DatabaseSetup, flagValue string) string {
+	// Priority 1: Check for existing baseline record in database
+	tableExists, err := setup.Database.TableExists(setup.TableName)
+	if err != nil {
+		PrintWarning("Error checking table existence during baseline resolution: %v", err)
+	} else if tableExists {
+		// Table exists, check for baseline record
+		baselineExists, existingVersion, err := setup.CheckBaselineRecordExists()
+		if err != nil {
+			PrintWarning("Error checking baseline record during resolution: %v", err)
+		} else if baselineExists {
+			PrintInfo("Using existing baseline version from database: " + existingVersion)
+			return existingVersion
+		}
+	}
+
+	// Priority 2: CLI flag
+	if flagValue != "" {
+		PrintInfo("Using baseline version from CLI flag: " + flagValue)
+		return flagValue
+	}
+
+	// Priority 3: Environment variable
+	if envVersion := os.Getenv("BLOOMDB_BASELINE_VERSION"); envVersion != "" {
+		PrintInfo("Using baseline version from environment: " + envVersion)
+		return envVersion
+	}
+
+	// Priority 4: Default value
+	PrintInfo("Using default baseline version: 1")
+	return "1"
+}
+
+// FindBaselineVersion returns the baseline version from migration records
+func FindBaselineVersion(records []db.MigrationRecord) string {
+	for _, record := range records {
+		if record.Type == "BASELINE" && record.Version != nil {
+			return *record.Version
+		}
+	}
+	return ""
+}
+
+// CalculateNextRank finds the maximum installed rank and returns the next rank
+func CalculateNextRank(records []db.MigrationRecord) int {
+	maxRank := 0
+	for _, record := range records {
+		if record.InstalledRank > maxRank {
+			maxRank = record.InstalledRank
+		}
+	}
+	return maxRank + 1
 }

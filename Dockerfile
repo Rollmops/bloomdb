@@ -35,8 +35,11 @@ WORKDIR /app
 # Copy the binary from builder stage
 COPY --from=builder /app/bloomdb .
 
-# Create migrations directory
-RUN mkdir -p /app/migrations && chown bloomdb:bloomdb /app/migrations
+# Copy migrations folder from builder stage
+COPY --from=builder /app/migrations ./migrations
+
+# Set ownership of migrations directory
+RUN chown -R bloomdb:bloomdb /app/migrations
 
 # Set default environment variables
 ENV BLOOMDB_PATH=/app/migrations

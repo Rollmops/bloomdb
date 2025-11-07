@@ -2,6 +2,8 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -24,6 +26,9 @@ type Database interface {
 	InsertBaselineRecord(tableName, version string) error
 	GetMigrationRecords(tableName string) ([]MigrationRecord, error)
 	InsertMigrationRecord(tableName string, record MigrationRecord) error
+	UpdateMigrationRecord(tableName string, installedRank int, version, description string, checksum int64) error
+	UpdateMigrationRecordFull(tableName string, record MigrationRecord) error
+	DeleteFailedMigrationRecords(tableName string) error
 	ExecuteMigration(content string) error
 	DestroyAllObjects() error
 	GetDatabaseObjects() ([]DatabaseObject, error)
@@ -65,4 +70,23 @@ func versionToInt(version string) int {
 		return num
 	}
 	return 0
+}
+
+// logSQL logs SQL statements when verbose mode is enabled
+func logSQL(query string, args ...interface{}) {
+	// Check if verbose mode is enabled via environment variable
+	verbose := os.Getenv("BLOOMDB_VERBOSE")
+	if verbose == "" {
+		return
+	}
+
+	// Format the SQL for display
+	displayQuery := strings.TrimSpace(query)
+
+	// If there are arguments, show them
+	if len(args) > 0 {
+		fmt.Fprintf(os.Stderr, "[SQL] %s\n[ARGS] %v\n", displayQuery, args)
+	} else {
+		fmt.Fprintf(os.Stderr, "[SQL] %s\n", displayQuery)
+	}
 }

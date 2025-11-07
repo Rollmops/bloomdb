@@ -21,18 +21,16 @@ services:
     networks:
       - bloomdb-network
 
-  bloom-app:
+  bloomdb:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: bloomdb-app
+    container_name: bloomdb
     environment:
       BLOOMDB_CONNECT_STRING: postgres://bloom_user:bloom_password@postgres:5432/bloom_db?sslmode=disable
       BLOOMDB_PATH: /app/migrations
       BLOOMDB_BASELINE_VERSION: "0"
     working_dir: /app
-    volumes:
-      - ./migrations:/app/migrations
     depends_on:
       postgres:
         condition: service_healthy

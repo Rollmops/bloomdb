@@ -44,7 +44,9 @@ func (o *OracleDatabase) GetDB() *sql.DB {
 }
 
 func (o *OracleDatabase) TableExists(tableName string) (bool, error) {
-	query := "SELECT table_name FROM user_tables WHERE table_name = UPPER(?)"
+	// Check for uppercase table name (Oracle's default for unquoted identifiers)
+	query := "SELECT table_name FROM user_tables WHERE table_name = :1"
+	logSQL(query, strings.ToUpper(tableName))
 	var result string
 	err := o.db.QueryRow(query, strings.ToUpper(tableName)).Scan(&result)
 	if err != nil {
@@ -63,19 +65,20 @@ func (o *OracleDatabase) CreateMigrationTable(tableName string) error {
 
 	query := fmt.Sprintf(`
 		CREATE TABLE %s (
-			"installed rank" NUMBER,
+			"installed_rank" NUMBER,
 			"version" VARCHAR2(50),
 			"description" VARCHAR2(4000),
 			"type" VARCHAR2(20),
 			"script" VARCHAR2(1000),
 			"checksum" NUMBER,
-			"installed by" VARCHAR2(100),
-			"installed on" TIMESTAMP,
-			"execution time" NUMBER,
+			"installed_by" VARCHAR2(100),
+			"installed_on" TIMESTAMP,
+			"execution_time" NUMBER,
 			"success" NUMBER
 		)
 	`, tableName)
 
+	logSQL(query)
 	_, err := o.db.Exec(query)
 	if err != nil {
 		return fmt.Errorf("failed to create migration table %s: %w", tableName, err)
@@ -90,12 +93,13 @@ func (o *OracleDatabase) InsertBaselineRecord(tableName, version string) error {
 	}
 
 	query := fmt.Sprintf(`
-		INSERT INTO %s ("installed rank", "version", "description", "type", "script", "checksum", "installed by", "installed on", "execution time", "success")
+		INSERT INTO %s ("installed_rank", "version", "description", "type", "script", "checksum", "installed_by", "installed_on", "execution_time", "success")
 		VALUES (:1, :2, :3, :4, :5, :6, :7, CURRENT_TIMESTAMP, :8, :9)
 	`, tableName)
 
 	// Convert version to integer for installed rank
 	installedRank := versionToInt(version)
+	logSQL(query, installedRank, version, "<< Baseline >>", "BASELINE", "<< Baseline >>", nil, "bloomdb", 0, 1)
 	_, err := o.db.Exec(query, installedRank, version, "<< Baseline >>", "BASELINE", "<< Baseline >>", nil, "bloomdb", 0, 1)
 	if err != nil {
 		return fmt.Errorf("failed to insert baseline record: %w", err)
@@ -110,11 +114,12 @@ func (o *OracleDatabase) GetMigrationRecords(tableName string) ([]MigrationRecor
 	}
 
 	query := fmt.Sprintf(`
-		SELECT "installed rank", "version", "description", "type", "script", "checksum", "installed by", "installed on", "execution time", "success"
+		SELECT "installed_rank", "version", "description", "type", "script", "checksum", "installed_by", "installed_on", "execution_time", "success"
 		FROM %s 
-		ORDER BY "installed rank"
+		ORDER BY "installed_rank"
 	`, tableName)
 
+	logSQL(query)
 	rows, err := o.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query migration records: %w", err)
@@ -140,13 +145,96 @@ func (o *OracleDatabase) InsertMigrationRecord(tableName string, record Migratio
 	}
 
 	query := fmt.Sprintf(`
-		INSERT INTO %s ("installed rank", "version", "description", "type", "script", "checksum", "installed by", "installed on", "execution time", "success")
+		INSERT INTO %s ("installed_rank", "version", "description", "type", "script", "checksum", "installed_by", "installed_on", "execution_time", "success")
 		VALUES (:1, :2, :3, :4, :5, :6, :7, CURRENT_TIMESTAMP, :8, :9)
 	`, tableName)
 
+	logSQL(query, record.InstalledRank, record.Version, record.Description, record.Type, record.Script, record.Checksum, record.InstalledBy, record.ExecutionTime, record.Success)
 	_, err := o.db.Exec(query, record.InstalledRank, record.Version, record.Description, record.Type, record.Script, record.Checksum, record.InstalledBy, record.ExecutionTime, record.Success)
 	if err != nil {
 		return fmt.Errorf("failed to insert migration record: %w", err)
+	}
+
+	return nil
+}
+
+func (o *OracleDatabase) UpdateMigrationRecord(tableName string, installedRank int, version, description string, checksum int64) error {
+	if o.db == nil {
+		return fmt.Errorf("database not connected")
+	}
+
+	query := fmt.Sprintf(`
+		UPDATE %s 
+		SET "description" = :1, "checksum" = :2
+		WHERE "installed_rank" = :3 AND "version" = :4
+	`, tableName)
+
+	logSQL(query, description, checksum, installedRank, version)
+	_, err := o.db.Exec(query, description, checksum, installedRank, version)
+	if err != nil {
+		return fmt.Errorf("failed to update migration record: %w", err)
+	}
+
+	return nil
+}
+
+func (o *OracleDatabase) UpdateMigrationRecordFull(tableName string, record MigrationRecord) error {
+	if o.db == nil {
+		return fmt.Errorf("database not connected")
+	}
+
+	query := fmt.Sprintf(`
+		UPDATE %s 
+		SET "installed_rank" = :1, "version" = :2, "description" = :3, "type" = :4, "script" = :5, "checksum" = :6, 
+			"installed_by" = :7, "installed_on" = :8, "execution_time" = :9, "success" = :10
+		WHERE "installed_rank" = :11 AND ("version" = :12 OR ("version" IS NULL AND :12 IS NULL))
+	`, tableName)
+
+	var versionPtr *string
+	if record.Version != nil {
+		versionPtr = record.Version
+	}
+
+	logSQL(query,
+		record.InstalledRank, versionPtr, record.Description, record.Type, record.Script,
+		record.Checksum, record.InstalledBy, record.InstalledOn, record.ExecutionTime, record.Success,
+		record.InstalledRank, versionPtr)
+	_, err := o.db.Exec(query,
+		record.InstalledRank, versionPtr, record.Description, record.Type, record.Script,
+		record.Checksum, record.InstalledBy, record.InstalledOn, record.ExecutionTime, record.Success,
+		record.InstalledRank, versionPtr)
+	if err != nil {
+		return fmt.Errorf("failed to update migration record: %w", err)
+	}
+
+	return nil
+}
+
+func (o *OracleDatabase) DeleteFailedMigrationRecords(tableName string) error {
+	if o.db == nil {
+		return fmt.Errorf("database not connected")
+	}
+
+	query := fmt.Sprintf(`
+		DELETE FROM %s 
+		WHERE "success" != 1
+	`, tableName)
+
+	logSQL(query)
+	result, err := o.db.Exec(query)
+	if err != nil {
+		return fmt.Errorf("failed to delete failed migration records: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected > 0 {
+		fmt.Printf("Removed %d failed migration records from %s\n", rowsAffected, tableName)
+	} else {
+		fmt.Printf("No failed migration records found in %s\n", tableName)
 	}
 
 	return nil
@@ -157,9 +245,13 @@ func (o *OracleDatabase) ExecuteMigration(content string) error {
 		return fmt.Errorf("database not connected")
 	}
 
-	_, err := o.db.Exec(content)
-	if err != nil {
-		return fmt.Errorf("failed to execute migration: %w", err)
+	statements := ParseSQLStatements(content)
+	for i, statement := range statements {
+		logSQL(statement)
+		_, err := o.db.Exec(statement)
+		if err != nil {
+			return fmt.Errorf("failed to execute statement %d: %w", i+1, err)
+		}
 	}
 
 	return nil
@@ -174,6 +266,7 @@ func (o *OracleDatabase) GetDatabaseObjects() ([]DatabaseObject, error) {
 
 	// Get tables
 	tableQuery := "SELECT table_name FROM user_tables"
+	logSQL(tableQuery)
 	rows, err := o.db.Query(tableQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tables: %w", err)
@@ -190,6 +283,7 @@ func (o *OracleDatabase) GetDatabaseObjects() ([]DatabaseObject, error) {
 
 	// Get views
 	viewQuery := "SELECT view_name FROM user_views"
+	logSQL(viewQuery)
 	rows, err = o.db.Query(viewQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query views: %w", err)
@@ -206,6 +300,7 @@ func (o *OracleDatabase) GetDatabaseObjects() ([]DatabaseObject, error) {
 
 	// Get indexes
 	indexQuery := "SELECT index_name, table_name FROM user_indexes"
+	logSQL(indexQuery)
 	rows, err = o.db.Query(indexQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query indexes: %w", err)
@@ -222,6 +317,7 @@ func (o *OracleDatabase) GetDatabaseObjects() ([]DatabaseObject, error) {
 
 	// Get sequences
 	sequenceQuery := "SELECT sequence_name FROM user_sequences"
+	logSQL(sequenceQuery)
 	rows, err = o.db.Query(sequenceQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sequences: %w", err)
@@ -238,6 +334,7 @@ func (o *OracleDatabase) GetDatabaseObjects() ([]DatabaseObject, error) {
 
 	// Get procedures
 	procedureQuery := "SELECT object_name FROM user_procedures"
+	logSQL(procedureQuery)
 	rows, err = o.db.Query(procedureQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query procedures: %w", err)
@@ -254,6 +351,7 @@ func (o *OracleDatabase) GetDatabaseObjects() ([]DatabaseObject, error) {
 
 	// Get functions
 	functionQuery := "SELECT object_name FROM user_objects WHERE object_type = 'FUNCTION'"
+	logSQL(functionQuery)
 	rows, err = o.db.Query(functionQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query functions: %w", err)
@@ -315,6 +413,7 @@ func (o *OracleDatabase) DestroyAllObjects() error {
 	}
 
 	for _, query := range queries {
+		logSQL(query)
 		if _, err := o.db.Exec(query); err != nil {
 			return fmt.Errorf("failed to execute destroy query: %w", err)
 		}

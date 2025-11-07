@@ -1,0 +1,24 @@
+Version Table
+-------------
+- the tool uses a version table that is specified by the env variable BLOOMDB_VERSION_TABLE_NAME and defaults to BLOOMDB_VERSION
+- the table is created only when running the baseline command
+- if the table is already there, skip creation
+- when running the baseline command, baseline record will be created in the version table:
+
+INSERT INTO <BLOOMDB_VERSION_TABLE_NAME>
+("installed rank", "version", description, "type", script, checksum, "installed by", "installed on", "execution time", success)
+VALUES(<version>, '<version>', '<< Baseline >>', 'BASELINE', '<< Baseline >>', NULL, '<user>', '<datetime>', 0, 1);
+
+- if the entry already exists, print to the user that the baseline is already created
+- the version is the baseline version this is coming from the CLI arg --baseline-version (which defaults to the env var BLOOMDB_BASELINE_VERSION)
+- all other commands than "baseline" should check the existing of the version table and the baseline record
+  - if either the table is not there or the record is missing, print an error to the user, referring to the baseline command
+
+Repair command
+--------------
+1. check if the baseline command was executed
+2. remove the version table record with success = 0
+
+Migrate command
+---------------
+- if the version table contains a record with success = 0 then do not continue migration but rather refer to the repair command

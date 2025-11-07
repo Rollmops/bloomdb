@@ -2,6 +2,8 @@ package loader
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCalculateChecksum(t *testing.T) {
@@ -48,9 +50,8 @@ func TestCalculateChecksum_Deterministic(t *testing.T) {
 	checksum3 := CalculateChecksum(content)
 
 	// All should be identical
-	if checksum1 != checksum2 || checksum2 != checksum3 {
-		t.Errorf("Checksum function is not deterministic: %d, %d, %d", checksum1, checksum2, checksum3)
-	}
+	assert.Equal(t, checksum1, checksum2, "Checksum should be deterministic")
+	assert.Equal(t, checksum2, checksum3, "Checksum should be deterministic")
 }
 
 func TestCalculateChecksum_DifferentContent(t *testing.T) {
@@ -63,30 +64,72 @@ func TestCalculateChecksum_DifferentContent(t *testing.T) {
 	checksum3 := CalculateChecksum(content3)
 
 	// content1 and content2 should be different
-	if checksum1 == checksum2 {
-		t.Errorf("Different content should produce different checksums: %d vs %d", checksum1, checksum2)
-	}
+	assert.NotEqual(t, checksum1, checksum2, "Different content should produce different checksums")
 
 	// content1 and content3 should be different (trailing space)
-	if checksum1 == checksum3 {
-		t.Errorf("Content with trailing space should produce different checksums: %d vs %d", checksum1, checksum3)
-	}
+	assert.NotEqual(t, checksum1, checksum3, "Content with trailing space should produce different checksums")
 }
 
 func TestCalculateChecksum_KnownValues(t *testing.T) {
-	// Test with known content to verify consistency
-	content := []byte("hello world")
-	actualChecksum := CalculateChecksum(content)
-
-	// We don't have a specific expected value since we changed the algorithm,
-	// but we can verify it's consistent across runs
-	if actualChecksum == 0 {
-		t.Errorf("Expected non-zero checksum for 'hello world', got %d", actualChecksum)
+	// Test with known content to verify CRC32 implementation
+	// These values are calculated using the same algorithm as Flyway
+	tests := []struct {
+		name            string
+		content         []byte
+		expectedNonZero bool
+	}{
+		{
+			name:            "hello world",
+			content:         []byte("hello world"),
+			expectedNonZero: true,
+		},
+		{
+			name:            "empty content",
+			content:         []byte(""),
+			expectedNonZero: false, // Empty content produces zero
+		},
+		{
+			name:            "simple SQL",
+			content:         []byte("CREATE TABLE users (id INT);"),
+			expectedNonZero: true,
+		},
 	}
 
-	emptyContent := []byte("")
-	_ = CalculateChecksum(emptyContent)
-	// Empty content might produce zero, which is acceptable
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checksum := CalculateChecksum(tt.content)
+			if tt.expectedNonZero {
+				assert.NotZero(t, checksum, "Expected non-zero checksum")
+			}
+			// Verify it's within int32 range (Flyway uses signed 32-bit)
+			assert.True(t, checksum >= -2147483648 && checksum <= 2147483647, "Checksum should be within int32 range")
+		})
+	}
+}
+
+func TestCalculateChecksum_LineEndingIndependence(t *testing.T) {
+	// Test that different line endings produce the same checksum (Flyway behavior)
+	contentUnix := []byte("CREATE TABLE users (\nid INT,\nname VARCHAR(255)\n);")
+	contentWindows := []byte("CREATE TABLE users (\r\nid INT,\r\nname VARCHAR(255)\r\n);")
+	contentMac := []byte("CREATE TABLE users (\rid INT,\rname VARCHAR(255)\r);")
+
+	checksumUnix := CalculateChecksum(contentUnix)
+	checksumWindows := CalculateChecksum(contentWindows)
+	checksumMac := CalculateChecksum(contentMac)
+
+	assert.Equal(t, checksumUnix, checksumWindows, "Unix and Windows line endings should produce same checksum")
+	assert.Equal(t, checksumUnix, checksumMac, "Unix and Mac line endings should produce same checksum")
+}
+
+func TestCalculateChecksum_BOMStripping(t *testing.T) {
+	// Test that UTF-8 BOM is stripped from first line
+	contentWithBOM := []byte("\ufeffCREATE TABLE users (id INT);")
+	contentWithoutBOM := []byte("CREATE TABLE users (id INT);")
+
+	checksumWithBOM := CalculateChecksum(contentWithBOM)
+	checksumWithoutBOM := CalculateChecksum(contentWithoutBOM)
+
+	assert.Equal(t, checksumWithoutBOM, checksumWithBOM, "BOM should be stripped and produce same checksum")
 }
 
 func TestCalculateChecksum_Performance(t *testing.T) {
@@ -98,7 +141,5 @@ func TestCalculateChecksum_Performance(t *testing.T) {
 
 	// Should complete quickly
 	checksum := CalculateChecksum(content)
-	if checksum == 0 {
-		t.Errorf("Expected non-zero checksum for large content, got %d", checksum)
-	}
+	assert.NotZero(t, checksum, "Expected non-zero checksum for large content")
 }

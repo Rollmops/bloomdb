@@ -2,6 +2,9 @@ package db
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSQLiteDatabase_CreateMigrationTable(t *testing.T) {
@@ -9,48 +12,37 @@ func TestSQLiteDatabase_CreateMigrationTable(t *testing.T) {
 
 	// Use in-memory SQLite for testing
 	err := db.Connect(":memory:")
-	if err != nil {
-		t.Fatalf("Failed to connect to SQLite: %v", err)
-	}
+	require.NoError(t, err, "Failed to connect to SQLite")
 	defer db.Close()
 
 	tableName := "test_migrations"
 
 	// Create migration table
 	err = db.CreateMigrationTable(tableName)
-	if err != nil {
-		t.Fatalf("Failed to create migration table: %v", err)
-	}
+	require.NoError(t, err, "Failed to create migration table")
 
 	// Verify table exists
 	exists, err := db.TableExists(tableName)
-	if err != nil {
-		t.Fatalf("Failed to check table existence: %v", err)
-	}
-
-	if !exists {
-		t.Error("Migration table was not created")
-	}
+	require.NoError(t, err, "Failed to check table existence")
+	assert.True(t, exists, "Migration table was not created")
 
 	// Verify table structure by querying schema
 	sqlDB := db.GetDB()
 	rows, err := sqlDB.Query("PRAGMA table_info(" + tableName + ")")
-	if err != nil {
-		t.Fatalf("Failed to get table info: %v", err)
-	}
+	require.NoError(t, err, "Failed to get table info")
 	defer rows.Close()
 
 	// Check column names and types
 	expectedColumns := map[string]string{
-		"installed rank": "INTEGER",
+		"installed_rank": "INTEGER",
 		"version":        "TEXT",
 		"description":    "TEXT",
 		"type":           "TEXT",
 		"script":         "TEXT",
 		"checksum":       "INTEGER",
-		"installed by":   "TEXT",
-		"installed on":   "DATETIME",
-		"execution time": "INTEGER",
+		"installed_by":   "TEXT",
+		"installed_on":   "DATETIME",
+		"execution_time": "INTEGER",
 		"success":        "INTEGER",
 	}
 
@@ -61,61 +53,41 @@ func TestSQLiteDatabase_CreateMigrationTable(t *testing.T) {
 		var notNull, pk int
 		var defaultValue interface{}
 		err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &pk)
-		if err != nil {
-			t.Fatalf("Failed to scan row: %v", err)
-		}
+		require.NoError(t, err, "Failed to scan row")
 		foundColumns[name] = dataType
 	}
 
 	for col, expectedType := range expectedColumns {
-		if actualType, exists := foundColumns[col]; !exists {
-			t.Errorf("Expected column '%s' not found", col)
-		} else if actualType != expectedType {
-			t.Errorf("Column '%s': expected type '%s', got '%s'", col, expectedType, actualType)
+		actualType, exists := foundColumns[col]
+		assert.True(t, exists, "Expected column '%s' not found", col)
+		if exists {
+			assert.Equal(t, expectedType, actualType, "Column '%s': expected type '%s', got '%s'", col, expectedType, actualType)
 		}
 	}
 }
 
 func TestPostgreSQLDatabase_CreateMigrationTable_NotConnected(t *testing.T) {
 	db := NewPostgreSQLDatabase()
-
 	tableName := "test_migrations"
 
-	// Test that the method generates the correct SQL
-	// We can't easily test without a real connection, but we can verify the query structure
+	// Test that the method generates correct SQL
+	// We can't easily test without a real connection, but we can verify query structure
 	err := db.CreateMigrationTable(tableName)
 
 	// Should fail because not connected
-	if err == nil {
-		t.Error("Expected error when not connected to database")
-	}
-
-	// Just check that we get some error (the exact error may vary based on driver)
-	if err != nil {
-		// Success - we got an error as expected
-		t.Logf("Got expected error: %v", err)
-	}
+	assert.Error(t, err, "Expected error when not connected to database")
 }
 
 func TestOracleDatabase_CreateMigrationTable_NotConnected(t *testing.T) {
 	db := NewOracleDatabase()
-
 	tableName := "test_migrations"
 
-	// Test that the method generates the correct SQL
-	// We can't easily test without a real connection, but we can verify the query structure
+	// Test that the method generates correct SQL
+	// We can't easily test without a real connection, but we can verify query structure
 	err := db.CreateMigrationTable(tableName)
 
 	// Should fail because not connected
-	if err == nil {
-		t.Error("Expected error when not connected to database")
-	}
-
-	// Just check that we get some error (the exact error may vary based on driver)
-	if err != nil {
-		// Success - we got an error as expected
-		t.Logf("Got expected error: %v", err)
-	}
+	assert.Error(t, err, "Expected error when not connected to database")
 }
 
 func TestCreateMigrationTable_SQLGeneration(t *testing.T) {
@@ -156,18 +128,11 @@ func TestCreateMigrationTable_SQLGeneration(t *testing.T) {
 
 			// Test that the method handles table name correctly
 			// We can't test full execution without real connections,
-			// but we can verify the method signature and basic error handling
+			// but we can verify method signature and basic error handling
 			err := db.CreateMigrationTable(tt.tableName)
 
 			// Should fail because not connected, but error should be about table creation
-			if err == nil {
-				t.Error("Expected error when not connected to database")
-			}
-
-			// Just verify we get some error about table creation
-			if err != nil {
-				t.Logf("Got expected error for %s: %v", tt.dbType, err)
-			}
+			assert.Error(t, err, "Expected error when not connected to database")
 		})
 	}
 }

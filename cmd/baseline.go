@@ -1,44 +1,56 @@
 package cmd
 
-import (
-	"fmt"
-
-	"bloomdb/logger"
-)
-
 type BaselineCommand struct{}
 
 func (b *BaselineCommand) Run() {
-	logger.Info("Starting baseline command")
-
-	// Get resolved baseline version from root command
-	version := GetBaselineVersion()
-	logger.Infof("Using baseline version: %s", version)
-
-	// Setup database connection
+	// Setup database connection first (needed for version resolution)
 	setup := SetupDatabase()
-	logger.Infof("Connected to %s database", setup.DBType)
 
-	// Ensure migration table doesn't exist
-	logger.Debug("Ensuring migration table does not exist")
-	setup.EnsureTableNotExists()
+	// Resolve baseline version with correct priority:
+	// 1. Existing baseline in DB, 2. CLI flag, 3. Env var, 4. Default
+	version := ResolveBaselineVersion(setup, baselineVersion)
 
-	// Create migration table
-	logger.Info("Creating migration table")
-	err := setup.CreateMigrationTable()
+	// Check if migration table exists
+	tableExists, err := setup.Database.TableExists(setup.TableName)
 	if err != nil {
-		logger.Errorf("Error creating migration table: %v", err)
+		PrintError("Error checking table existence: " + err.Error())
+		setup.Database.Close()
 		return
+	}
+
+	if tableExists {
+		// Table exists, check if baseline record already exists
+		baselineExists, existingBaselineVersion, err := setup.CheckBaselineRecordExists()
+		if err != nil {
+			PrintError("Error checking baseline record: " + err.Error())
+			setup.Database.Close()
+			return
+		}
+
+		if baselineExists {
+			// Baseline already exists - the resolved version IS the existing one
+			// (ResolveBaselineVersion already returned the existing version)
+			PrintSuccess("Baseline already exists with version " + existingBaselineVersion)
+			return
+		}
+
+		PrintInfo("Migration table '" + setup.TableName + "' exists but no baseline record found")
+	} else {
+		// Table doesn't exist, create it
+		PrintInfo("Migration table '" + setup.TableName + "' does not exist, creating it")
+		err := setup.CreateMigrationTable()
+		if err != nil {
+			PrintError("Error creating migration table: " + err.Error())
+			return
+		}
 	}
 
 	// Insert baseline record
-	logger.Infof("Inserting baseline record for version: %s", version)
 	err = setup.InsertBaselineRecord(version)
 	if err != nil {
-		logger.Errorf("Error inserting baseline record: %v", err)
+		PrintError("Error inserting baseline record: " + err.Error())
 		return
 	}
 
-	logger.Infof("Baseline completed successfully - connected to %s database, version: %s", setup.DBType, version)
-	fmt.Printf("baseline - connected to %s database, version: %s\n", setup.DBType, version)
+	PrintSuccess("Baseline completed successfully")
 }

@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRepeatableMigrationLoader_LoadRepeatableMigrations(t *testing.T) {
@@ -23,43 +26,27 @@ func TestRepeatableMigrationLoader_LoadRepeatableMigrations(t *testing.T) {
 	for filename, content := range migrationFiles {
 		filePath := filepath.Join(tempDir, filename)
 		err := os.WriteFile(filePath, []byte(content), 0644)
-		if err != nil {
-			t.Fatalf("Failed to create test file %s: %v", filename, err)
-		}
+		require.NoError(t, err, "Failed to create test file %s", filename)
 	}
 
 	loader := NewRepeatableMigrationLoader(tempDir)
 	migrations, err := loader.LoadRepeatableMigrations()
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
+	require.NoError(t, err, "Expected no error, got %v", err)
 
-	if len(migrations) != 4 {
-		t.Errorf("Expected 4 migrations, got %d", len(migrations))
-	}
+	assert.Equal(t, 4, len(migrations), "Expected 4 migrations, got %d", len(migrations))
 
 	expectedDescriptions := []string{"create_users_table", "add_indexes", "update_triggers", "create_views"}
 	foundDescriptions := make(map[string]bool)
 	for _, migration := range migrations {
 		foundDescriptions[migration.Description] = true
 
-		if migration.Content == "" {
-			t.Errorf("Expected non-empty content for migration %s", migration.Description)
-		}
-
-		if migration.Checksum == 0 {
-			t.Errorf("Expected non-zero checksum for migration %s", migration.Description)
-		}
-
-		if migration.FilePath == "" {
-			t.Errorf("Expected non-empty file path for migration %s", migration.Description)
-		}
+		assert.NotEmpty(t, migration.Content, "Expected non-empty content for migration %s", migration.Description)
+		assert.NotZero(t, migration.Checksum, "Expected non-zero checksum for migration %s", migration.Description)
+		assert.NotEmpty(t, migration.FilePath, "Expected non-empty file path for migration %s", migration.Description)
 	}
 
 	for _, expectedDesc := range expectedDescriptions {
-		if !foundDescriptions[expectedDesc] {
-			t.Errorf("Expected to find migration with description '%s'", expectedDesc)
-		}
+		assert.True(t, foundDescriptions[expectedDesc], "Expected to find migration with description '%s'", expectedDesc)
 	}
 }
 
@@ -68,21 +55,14 @@ func TestRepeatableMigrationLoader_LoadRepeatableMigrations_EmptyDirectory(t *te
 
 	loader := NewRepeatableMigrationLoader(tempDir)
 	migrations, err := loader.LoadRepeatableMigrations()
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	if len(migrations) != 0 {
-		t.Errorf("Expected 0 migrations, got %d", len(migrations))
-	}
+	require.NoError(t, err, "Expected no error, got %v", err)
+	assert.Empty(t, migrations, "Expected 0 migrations, got %d", len(migrations))
 }
 
 func TestRepeatableMigrationLoader_LoadRepeatableMigrations_NonExistentDirectory(t *testing.T) {
 	loader := NewRepeatableMigrationLoader("/non/existent/directory")
 	_, err := loader.LoadRepeatableMigrations()
-	if err == nil {
-		t.Error("Expected error for non-existent directory")
-	}
+	assert.Error(t, err, "Expected error for non-existent directory")
 }
 
 func TestRepeatableMigration_GetFileName(t *testing.T) {
@@ -92,10 +72,7 @@ func TestRepeatableMigration_GetFileName(t *testing.T) {
 
 	expected := "R__create_table.sql"
 	actual := migration.GetFileName()
-
-	if actual != expected {
-		t.Errorf("Expected filename '%s', got '%s'", expected, actual)
-	}
+	assert.Equal(t, expected, actual, "Expected filename '%s', got '%s'", expected, actual)
 }
 
 func TestRepeatableMigration_String(t *testing.T) {
@@ -105,10 +82,7 @@ func TestRepeatableMigration_String(t *testing.T) {
 
 	expected := "R__add_column"
 	actual := migration.String()
-
-	if actual != expected {
-		t.Errorf("Expected string '%s', got '%s'", expected, actual)
-	}
+	assert.Equal(t, expected, actual, "Expected string '%s', got '%s'", expected, actual)
 }
 
 func TestRepeatableMigrationLoader_FilePatternMatching(t *testing.T) {
@@ -130,16 +104,12 @@ func TestRepeatableMigrationLoader_FilePatternMatching(t *testing.T) {
 		content := "CREATE TABLE test (id INT);"
 		filePath := filepath.Join(tempDir, filename)
 		err := os.WriteFile(filePath, []byte(content), 0644)
-		if err != nil {
-			t.Fatalf("Failed to create test file %s: %v", filename, err)
-		}
+		require.NoError(t, err, "Failed to create test file %s", filename)
 	}
 
 	loader := NewRepeatableMigrationLoader(tempDir)
 	migrations, err := loader.LoadRepeatableMigrations()
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
+	require.NoError(t, err, "Expected no error, got %v", err)
 
 	matchedFiles := make(map[string]bool)
 	for _, migration := range migrations {

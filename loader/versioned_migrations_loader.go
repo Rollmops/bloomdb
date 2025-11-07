@@ -3,7 +3,6 @@ package loader
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -40,46 +39,34 @@ func IsValidVersion(version string) bool {
 }
 
 func (l *VersionedMigrationLoader) LoadMigrations() ([]*VersionedMigration, error) {
-	files, err := os.ReadDir(l.directory)
+	// Get filter configuration from environment
+	filterConfig := GetFilterConfig()
+
+	// Collect filtered migration files
+	migrationFiles, err := CollectFilteredMigrationFiles(l.directory, filterConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read migration directory: %w", err)
+		return nil, err
 	}
 
+	// Filter for versioned migrations only
 	var migrations []*VersionedMigration
-	migrationPattern := regexp.MustCompile(`^V(.+?)__(.+)\.sql$`)
-
-	for _, file := range files {
-		if file.IsDir() {
-			continue
+	for _, mf := range migrationFiles {
+		if mf.IsRepeatable {
+			continue // Skip repeatable migrations
 		}
 
-		filename := file.Name()
-		matches := migrationPattern.FindStringSubmatch(filename)
-		if len(matches) != 3 {
-			continue
-		}
-
-		version := matches[1]
-		description := matches[2]
-		filePath := filepath.Join(l.directory, filename)
-
-		// Validate version format
-		if !IsValidVersion(version) {
-			return nil, fmt.Errorf("invalid version format in file %s: %s (expected format: 1, 1.2, 1.2.3, etc.)", filename, version)
-		}
-
-		content, err := os.ReadFile(filePath)
+		content, err := os.ReadFile(mf.FullPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read migration file %s: %w", filename, err)
+			return nil, fmt.Errorf("failed to read migration file %s: %w", mf.Filename, err)
 		}
 
 		checksum := CalculateChecksum(content)
 
 		migration := &VersionedMigration{
-			Version:     version,
-			Description: description,
+			Version:     mf.Version,
+			Description: mf.Description,
 			Content:     string(content),
-			FilePath:    filePath,
+			FilePath:    mf.FullPath,
 			Checksum:    checksum,
 		}
 

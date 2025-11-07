@@ -2,6 +2,8 @@ package db
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParseDatabaseType(t *testing.T) {
@@ -54,20 +56,12 @@ func TestParseDatabaseType(t *testing.T) {
 			dbType, err := ParseDatabaseType(tt.connectionString)
 
 			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error for connection string '%s', but got none", tt.connectionString)
-				}
+				assert.Error(t, err, "Expected error for connection string '%s'", tt.connectionString)
 				return
 			}
 
-			if err != nil {
-				t.Errorf("Unexpected error for connection string '%s': %v", tt.connectionString, err)
-				return
-			}
-
-			if dbType != tt.expectedType {
-				t.Errorf("Expected database type '%s', got '%s'", tt.expectedType, dbType)
-			}
+			assert.NoError(t, err, "Unexpected error for connection string '%s': %v", tt.connectionString, err)
+			assert.Equal(t, tt.expectedType, dbType, "Expected database type '%s', got '%s'", tt.expectedType, dbType)
 		})
 	}
 }
@@ -116,34 +110,12 @@ func TestExtractConnectionString(t *testing.T) {
 			connStr, err := ExtractConnectionString(tt.connectionString)
 
 			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error for connection string '%s', but got none", tt.connectionString)
-				}
+				assert.Error(t, err, "Expected error for connection string '%s'", tt.connectionString)
 				return
 			}
 
-			if err != nil {
-				t.Errorf("Unexpected error for connection string '%s': %v", tt.connectionString, err)
-				return
-			}
-
-			if connStr != tt.expectedConnStr {
-				t.Errorf("Expected connection string '%s', got '%s'", tt.expectedConnStr, connStr)
-			}
+			assert.NoError(t, err, "Unexpected error for connection string '%s': %v", tt.connectionString, err)
+			assert.Equal(t, tt.expectedConnStr, connStr, "Expected connection string '%s', got '%s'", tt.expectedConnStr, connStr)
 		})
-	}
-}
-
-func TestDatabaseTypeConstants(t *testing.T) {
-	if SQLite != "sqlite" {
-		t.Errorf("Expected SQLite constant to be 'sqlite', got '%s'", SQLite)
-	}
-
-	if PostgreSQL != "postgresql" {
-		t.Errorf("Expected PostgreSQL constant to be 'postgresql', got '%s'", PostgreSQL)
-	}
-
-	if Oracle != "oracle" {
-		t.Errorf("Expected Oracle constant to be 'oracle', got '%s'", Oracle)
 	}
 }

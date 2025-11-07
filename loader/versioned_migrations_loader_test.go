@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoader_LoadMigrations(t *testing.T) {
@@ -22,33 +25,23 @@ func TestLoader_LoadMigrations(t *testing.T) {
 	for filename, content := range migrationFiles {
 		filePath := filepath.Join(tempDir, filename)
 		err := os.WriteFile(filePath, []byte(content), 0644)
-		if err != nil {
-			t.Fatalf("Failed to create test file %s: %v", filename, err)
-		}
+		require.NoError(t, err, "Failed to create test file %s", filename)
 	}
 
 	loader := NewVersionedMigrationLoader(tempDir)
 	migrations, err := loader.LoadMigrations()
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
+	require.NoError(t, err, "Expected no error, got %v", err)
 
-	if len(migrations) != 5 {
-		t.Errorf("Expected 5 migrations, got %d", len(migrations))
-	}
+	assert.Equal(t, 5, len(migrations), "Expected 5 migrations, got %d", len(migrations))
 
 	expectedVersions := []string{"1", "1.2.3", "2", "2.3", "4.2.22.1"}
 	for i, migration := range migrations {
-		if migration.Version != expectedVersions[i] {
-			t.Errorf("Expected version %s at index %d, got %s", expectedVersions[i], i, migration.Version)
-		}
+		assert.Equal(t, expectedVersions[i], migration.Version, "Expected version %s at index %d, got %s", expectedVersions[i], i, migration.Version)
 	}
 
 	expectedDescriptions := []string{"create_users_table", "add_email_column", "create_posts_table", "add_index", "latest_migration"}
 	for i, migration := range migrations {
-		if migration.Description != expectedDescriptions[i] {
-			t.Errorf("Expected description '%s' at index %d, got '%s'", expectedDescriptions[i], i, migration.Description)
-		}
+		assert.Equal(t, expectedDescriptions[i], migration.Description, "Expected description '%s' at index %d, got '%s'", expectedDescriptions[i], i, migration.Description)
 	}
 }
 
@@ -57,21 +50,14 @@ func TestLoader_LoadMigrations_EmptyDirectory(t *testing.T) {
 
 	loader := NewVersionedMigrationLoader(tempDir)
 	migrations, err := loader.LoadMigrations()
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	if len(migrations) != 0 {
-		t.Errorf("Expected 0 migrations, got %d", len(migrations))
-	}
+	require.NoError(t, err, "Expected no error, got %v", err)
+	assert.Empty(t, migrations, "Expected 0 migrations, got %d", len(migrations))
 }
 
 func TestLoader_LoadMigrations_NonExistentDirectory(t *testing.T) {
 	loader := NewVersionedMigrationLoader("/non/existent/directory")
 	_, err := loader.LoadMigrations()
-	if err == nil {
-		t.Error("Expected error for non-existent directory")
-	}
+	assert.Error(t, err, "Expected error for non-existent directory")
 }
 
 func TestLoader_LoadMigrations_InvalidVersionFormat(t *testing.T) {
@@ -80,20 +66,14 @@ func TestLoader_LoadMigrations_InvalidVersionFormat(t *testing.T) {
 	// Create a file with invalid version format
 	invalidFile := filepath.Join(tempDir, "Vabc__invalid_version.sql")
 	err := os.WriteFile(invalidFile, []byte("CREATE TABLE test (id INT);"), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create invalid migration file: %v", err)
-	}
+	require.NoError(t, err, "Failed to create invalid migration file")
 
 	loader := NewVersionedMigrationLoader(tempDir)
 	_, err = loader.LoadMigrations()
-	if err == nil {
-		t.Error("Expected error for invalid version format")
-	}
+	assert.Error(t, err, "Expected error for invalid version format")
 
 	expectedError := "invalid version format in file Vabc__invalid_version.sql: abc (expected format: 1, 1.2, 1.2.3, etc.)"
-	if err.Error() != expectedError {
-		t.Errorf("Expected error %q, got %q", expectedError, err.Error())
-	}
+	assert.Equal(t, expectedError, err.Error(), "Expected error %q, got %q", expectedError, err.Error())
 }
 
 func TestLoader_GetMigrationByVersion(t *testing.T) {
@@ -105,18 +85,11 @@ func TestLoader_GetMigrationByVersion(t *testing.T) {
 
 	loader := NewVersionedMigrationLoader(".")
 	migration := loader.GetMigrationByVersion(migrations, "2.1")
-	if migration == nil {
-		t.Error("Expected to find migration with version 2.1")
-	}
-
-	if migration.Description != "second" {
-		t.Errorf("Expected description 'second', got '%s'", migration.Description)
-	}
+	assert.NotNil(t, migration, "Expected to find migration with version 2.1")
+	assert.Equal(t, "second", migration.Description, "Expected description 'second', got '%s'", migration.Description)
 
 	missing := loader.GetMigrationByVersion(migrations, "99")
-	if missing != nil {
-		t.Error("Expected nil for non-existent version")
-	}
+	assert.Nil(t, missing, "Expected nil for non-existent version")
 }
 
 func TestLoader_GetLatestVersion(t *testing.T) {
@@ -152,9 +125,7 @@ func TestLoader_GetLatestVersion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			loader := NewVersionedMigrationLoader(".")
 			latest := loader.GetLatestVersion(tt.migrations)
-			if latest != tt.expected {
-				t.Errorf("Expected latest version %s, got %s", tt.expected, latest)
-			}
+			assert.Equal(t, tt.expected, latest, "Expected latest version %s, got %s", tt.expected, latest)
 		})
 	}
 }
@@ -167,10 +138,7 @@ func TestVersionedMigration_GetFileName(t *testing.T) {
 
 	expected := "V1.2.3__create_table.sql"
 	actual := migration.GetFileName()
-
-	if actual != expected {
-		t.Errorf("Expected filename '%s', got '%s'", expected, actual)
-	}
+	assert.Equal(t, expected, actual, "Expected filename '%s', got '%s'", expected, actual)
 }
 
 func TestVersionedMigration_String(t *testing.T) {
@@ -181,10 +149,7 @@ func TestVersionedMigration_String(t *testing.T) {
 
 	expected := "V10.5__add_column"
 	actual := migration.String()
-
-	if actual != expected {
-		t.Errorf("Expected string '%s', got '%s'", expected, actual)
-	}
+	assert.Equal(t, expected, actual, "Expected string '%s', got '%s'", expected, actual)
 }
 
 func TestCompareVersions(t *testing.T) {
@@ -205,9 +170,7 @@ func TestCompareVersions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := CompareVersions(tt.v1, tt.v2)
-			if result != tt.expected {
-				t.Errorf("Expected compareVersions(%s, %s) = %d, got %d", tt.v1, tt.v2, tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result, "Expected compareVersions(%s, %s) = %d, got %d", tt.v1, tt.v2, tt.expected, result)
 		})
 	}
 }
@@ -259,9 +222,7 @@ func TestIsValidVersion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.version, func(t *testing.T) {
 			result := IsValidVersion(tt.version)
-			if result != tt.expected {
-				t.Errorf("Expected IsValidVersion(%q) = %v, got %v", tt.version, tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result, "Expected IsValidVersion(%q) = %v, got %v", tt.version, tt.expected, result)
 		})
 	}
 }

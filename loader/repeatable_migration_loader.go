@@ -3,8 +3,6 @@ package loader
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"regexp"
 )
 
 type RepeatableMigration struct {
@@ -25,39 +23,33 @@ func NewRepeatableMigrationLoader(directory string) *RepeatableMigrationLoader {
 }
 
 func (r *RepeatableMigrationLoader) LoadRepeatableMigrations() ([]*RepeatableMigration, error) {
-	files, err := os.ReadDir(r.directory)
+	// Get filter configuration from environment
+	filterConfig := GetFilterConfig()
+
+	// Collect filtered migration files
+	migrationFiles, err := CollectFilteredMigrationFiles(r.directory, filterConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read migration directory: %w", err)
+		return nil, err
 	}
 
+	// Filter for repeatable migrations only
 	var migrations []*RepeatableMigration
-	migrationPattern := regexp.MustCompile(`^R__(.+)\.sql$`)
-
-	for _, file := range files {
-		if file.IsDir() {
-			continue
+	for _, mf := range migrationFiles {
+		if !mf.IsRepeatable {
+			continue // Skip versioned migrations
 		}
 
-		filename := file.Name()
-		matches := migrationPattern.FindStringSubmatch(filename)
-		if len(matches) != 2 {
-			continue
-		}
-
-		description := matches[1]
-		filePath := filepath.Join(r.directory, filename)
-
-		content, err := os.ReadFile(filePath)
+		content, err := os.ReadFile(mf.FullPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read migration file %s: %w", filename, err)
+			return nil, fmt.Errorf("failed to read migration file %s: %w", mf.Filename, err)
 		}
 
 		checksum := CalculateChecksum(content)
 
 		migration := &RepeatableMigration{
-			Description: description,
+			Description: mf.Description,
 			Content:     string(content),
-			FilePath:    filePath,
+			FilePath:    mf.FullPath,
 			Checksum:    checksum,
 		}
 
