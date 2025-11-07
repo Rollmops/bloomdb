@@ -1,0 +1,48 @@
+
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: bloomdb-postgres
+    environment:
+      POSTGRES_DB: bloom_db
+      POSTGRES_USER: bloom_user
+      POSTGRES_PASSWORD: bloom_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bloom_user -d bloom_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bloomdb-network
+
+  bloom-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bloomdb-app
+    environment:
+      BLOOMDB_CONNECT_STRING: postgres://bloom_user:bloom_password@postgres:5432/bloom_db?sslmode=disable
+      BLOOMDB_PATH: /app/migrations
+      BLOOMDB_BASELINE_VERSION: "0"
+    working_dir: /app
+    volumes:
+      - ./migrations:/app/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - bloomdb-network
+    command: sleep infinity  # Keep container running for interactive use
+
+volumes:
+  postgres_data:
+
+networks:
+  bloomdb-network:
+    driver: bridge
