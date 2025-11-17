@@ -51,6 +51,27 @@ migrations/
 * **Versioned migrations**: `V{version}__{description}.sql` (run once)
 * **Repeatable migrations**: `R__{description}.sql` (re-run when changed)
 
+=== Migrating from Flyway
+
+BloomDB is fully compatible with existing Flyway installations:
+
+[source,bash]
+----
+# Point to your existing database
+export BLOOMDB_CONNECT_STRING="your-database-connection"
+
+# Initialize BloomDB to recognize existing Flyway migrations
+./bloomdb baseline
+
+# Continue applying migrations
+./bloomdb migrate --path ./migrations
+----
+
+* **Same schema table**: Uses `flyway_schema_history` with identical structure
+* **Compatible checksums**: Same CRC32 algorithm as Flyway
+* **No file changes**: Your existing `V*.sql` files work unchanged
+* **Seamless transition**: All previously applied migrations are recognized
+
 === Connection Strings
 
 * **PostgreSQL**: `postgres://user:password@localhost:5432/database?sslmode=disable`
@@ -77,6 +98,7 @@ For comprehensive documentation, see the link:docs/[docs directory](docs/index.a
 * **Error handling**: Failed migrations stop execution and aren't recorded
 * **Baseline support**: Initialize existing databases with migration tracking
 * **Database-specific filtering**: Support for database-specific migration variants
+* **Flyway compatibility**: Drop-in replacement for existing Flyway installations
 
 == License
 

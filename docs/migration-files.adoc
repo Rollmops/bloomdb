@@ -180,6 +180,66 @@ CREATE TRIGGER update_users_updated_at
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 ----
 
+== Migrating from Flyway
+
+BloomDB is designed to be compatible with existing Flyway installations, making migration seamless.
+
+=== Version Table Compatibility
+
+BloomDB uses the same schema table structure as Flyway:
+
+* **Table name**: `flyway_schema_history` (default)
+* **Schema compatibility**: Same column names and types
+* **Checksum algorithm**: Identical CRC32 implementation
+* **Version tracking**: Compatible version ordering
+
+=== Migration Process
+
+**1. Existing Database Migration:**
+[source,bash]
+----
+# Point BloomDB to your existing database
+export BLOOMDB_CONNECT_STRING="your-database-connection"
+
+# Initialize BloomDB to recognize existing Flyway migrations
+./bloomdb baseline
+----
+
+**2. Continue with Existing Migrations:**
+[source,bash]
+----
+# Apply any new migrations using BloomDB
+./bloomdb migrate --path ./migrations
+----
+
+**3. Verify Migration Status:**
+[source,bash]
+----
+# Check that all migrations are properly tracked
+./bloomdb info
+----
+
+=== What Works Out of the Box
+
+* **Existing migration files**: No changes needed to your current `V*.sql` files
+* **Applied migrations**: All previously applied migrations are recognized
+* **Checksum validation**: Same checksum algorithm ensures consistency
+* **Version ordering**: Compatible version numbering system
+
+=== Key Differences from Flyway
+
+* **Command names**: `migrate` instead of `flyway migrate`
+* **Configuration**: Environment variables instead of config files
+* **Additional features**: Database-specific filtering, enhanced error handling
+
+=== Migration Checklist
+
+- [ ] Backup your database before switching tools
+- [ ] Test with a copy of your production database
+- [ ] Verify all existing migrations appear in `./bloomdb info`
+- [ ] Run `./bloomdb repair` if you see checksum warnings
+- [ ] Update CI/CD pipelines to use BloomDB commands
+
 == Checksum Validation
 
 BloomDB automatically validates migration file integrity using Flyway-compatible CRC32 checksums.
