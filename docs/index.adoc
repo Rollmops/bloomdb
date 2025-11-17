@@ -24,3 +24,17 @@ If you need help:
 * Check the link:troubleshooting.adoc[Troubleshooting] guide
 * Open an issue on link:https://github.com/rollmops/bloomdb/issues[GitHub Issues]
 * Review link:https://github.com/rollmops/bloomdb/blob/main/integration-tests/[Integration Tests] for examples
+
+== License
+
+BloomDB is licensed under the MIT License. See the link:../LICENSE[LICENSE] file for details.
+
+This means you are free to:
+
+* **Use** - Use BloomDB for any purpose, including commercial applications
+* **Modify** - Change the source code to suit your needs
+* **Distribute** - Share BloomDB with others
+* **Sublicense** - Include BloomDB in larger projects
+* **Sell** - Use BloomDB in commercial products
+
+Under the simple condition that you include the copyright notice and license text in all copies or substantial portions of the software.
