@@ -1,0 +1,62 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main, master ]
+    paths: 
+      - 'docs/**'
+      - 'README.adoc'
+  pull_request:
+    branches: [ main, master ]
+    paths: 
+      - 'docs/**'
+      - 'README.adoc'
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.0'
+    
+    - name: Install Asciidoctor
+      run: |
+        gem install asciidoctor
+        gem install asciidoctor-html5s
+    
+    - name: Generate HTML documentation
+      run: |
+        mkdir -p docs/html
+        asciidoctor -D docs/html docs/index.adoc
+        asciidoctor -D docs/html docs/getting-started.adoc
+        asciidoctor -D docs/html docs/migration-files.adoc
+        asciidoctor -D docs/html docs/commands.adoc
+        asciidoctor -D docs/html docs/configuration.adoc
+        asciidoctor -D docs/html docs/advanced-usage.adoc
+        asciidoctor -D docs/html docs/troubleshooting.adoc
+    
+    - name: Upload documentation artifacts
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: docs/html/
+    
+  deploy:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    needs: build-docs
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4

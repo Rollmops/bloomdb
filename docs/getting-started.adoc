@@ -1,0 +1,192 @@
+= Getting Started
+
+This guide will help you get BloomDB up and running quickly.
+
+== Prerequisites
+
+* **Go 1.25 or later** - For building from source
+* **Database access** - PostgreSQL, SQLite, or Oracle database
+* **Basic SQL knowledge** - For writing migration files
+
+== Installation
+
+=== From Source
+
+[source,bash]
+----
+# Clone the repository
+git clone https://github.com/rollmops/bloomdb.git
+cd bloomdb
+
+# Build the binary
+go build -o bloomdb .
+
+# Verify installation
+./bloomdb --help
+----
+
+=== Pre-built Binaries
+
+Pre-built binaries are available in the GitHub Releases section (when available).
+
+== First Steps
+
+=== 1. Set Up Database Connection
+
+BloomDB needs a database connection string. You can provide it via:
+
+**Environment Variable (Recommended):**
+[source,bash]
+----
+export BLOOMDB_CONNECT_STRING="postgres://user:pass@localhost/mydb"
+----
+
+**Command Line Flag:**
+[source,bash]
+----
+./bloomdb migrate --conn "postgres://user:pass@localhost/mydb"
+----
+
+=== 2. Create Migration Directory
+
+Create a directory to store your migration files:
+
+[source,bash]
+----
+mkdir migrations
+cd migrations
+----
+
+=== 3. Create Your First Migration
+
+Create a simple migration file:
+
+[source,bash]
+----
+# Create a users table
+cat > V1__Create_users_table.sql << 'EOF'
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+EOF
+----
+
+=== 4. Run Your First Migration
+
+[source,bash]
+----
+# Apply the migration
+./bloomdb migrate --path ./migrations
+
+# Check the status
+./bloomdb info --path ./migrations
+----
+
+== Connection Strings
+
+=== PostgreSQL
+
+[source,bash]
+----
+# Basic connection
+postgres://username:password@localhost:5432/database_name
+
+# With SSL and options
+postgres://user:pass@localhost:5432/db?sslmode=disable&connect_timeout=10
+----
+
+=== SQLite
+
+[source,bash]
+----
+# File path
+sqlite:/path/to/database.db
+
+# Relative path
+sqlite:./data/app.db
+
+# In-memory database (for testing)
+sqlite::memory:
+----
+
+=== Oracle
+
+[source,bash]
+----
+# Basic connection
+oracle://username:password@localhost:1521/service_name
+
+# With additional parameters
+oracle://user:pass@host:1521/sid?ssl_server_dn_match=true
+----
+
+== Basic Workflow
+
+Here's a typical development workflow:
+
+[source,bash]
+----
+# 1. Set up environment
+export BLOOMDB_CONNECT_STRING="postgres://dev:dev@localhost/myapp_dev"
+
+# 2. For existing databases, initialize baseline
+./bloomdb baseline
+
+# 3. Create new migration
+cat > migrations/V2__Add_user_profile.sql << 'EOF'
+CREATE TABLE user_profiles (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    bio TEXT,
+    avatar_url VARCHAR(255)
+);
+EOF
+
+# 4. Apply migrations
+./bloomdb migrate --path ./migrations
+
+# 5. Check status
+./bloomdb info --path ./migrations
+----
+
+== Migration Types
+
+=== Versioned Migrations
+
+* **Naming**: `V{version}__{description}.sql`
+* **Purpose**: Run once in version order
+* **Examples**:
+** `V1__Create_users_table.sql`
+** `V2.1__Add_email_column.sql`
+** `V3.0.5__Add_indexes.sql`
+
+=== Repeatable Migrations
+
+* **Naming**: `R__{description}.sql`
+* **Purpose**: Re-run when content changes
+* **Use cases**: Triggers, views, functions, stored procedures
+* **Examples**:
+** `R__Create_user_triggers.sql`
+** `R__Update_product_views.sql`
+
+== Next Steps
+
+Now that you're familiar with the basics:
+
+* Read link:migration-files.adoc[Migration Files] for detailed file structure
+* Explore link:commands.adoc[Commands] for all available commands
+* Check link:configuration.adoc[Configuration] for advanced options
+* See link:advanced-usage.adoc[Advanced Usage] for powerful features
+
+== Troubleshooting
+
+**Common Issues:**
+
+* **"Table does not exist"** - Run `./bloomdb baseline` first
+* **"Connection failed"** - Verify connection string format and database access
+* **"Invalid version format"** - Use numeric versions like `1`, `1.2`, `1.2.3`
+
+For more help, see link:troubleshooting.adoc[Troubleshooting].

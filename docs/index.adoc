@@ -1,0 +1,26 @@
+= BloomDB Documentation
+
+Welcome to the comprehensive BloomDB documentation. BloomDB is a powerful database migration tool that supports multiple database backends with versioned and repeatable migrations.
+
+== Table of Contents
+
+* link:getting-started.adoc[Getting Started] - Installation and basic usage
+* link:migration-files.adoc[Migration Files] - File structure and naming conventions  
+* link:commands.adoc[Commands] - Complete command reference
+* link:configuration.adoc[Configuration] - Environment variables and settings
+* link:advanced-usage.adoc[Advanced Usage] - Filtering, post-migration scripts, and more
+* link:troubleshooting.adoc[Troubleshooting] - Common issues and solutions
+
+== Quick Links
+
+* link:https://github.com/rollmops/bloomdb[GitHub Repository]
+* link:https://github.com/rollmops/bloomdb/actions[Build Status]
+* link:https://codecov.io/gh/rollmops/bloomdb[Coverage Reports]
+
+== Getting Help
+
+If you need help:
+
+* Check the link:troubleshooting.adoc[Troubleshooting] guide
+* Open an issue on link:https://github.com/rollmops/bloomdb/issues[GitHub Issues]
+* Review link:https://github.com/rollmops/bloomdb/blob/main/integration-tests/[Integration Tests] for examples

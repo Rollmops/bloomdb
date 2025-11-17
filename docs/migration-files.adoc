@@ -1,0 +1,326 @@
+= Migration Files
+
+This guide covers BloomDB migration file structure, naming conventions, and advanced features like database-specific filtering.
+
+== File Structure
+
+Organize your migrations in a directory structure like this:
+
+[source]
+----
+migrations/
+├── V1__Create_users_table.sql
+├── V2__Create_posts_table.sql
+├── V3__Add_foreign_keys.sql
+├── V3__Add_foreign_keys.postgres.sql
+├── V3__Add_foreign_keys.oracle.sql
+└── R__Create_updated_at_triggers.sql
+    └── R__Create_updated_at_triggers.mysql.sql
+----
+
+== Naming Conventions
+
+=== Versioned Migrations
+
+* **Format**: `V{version}__{description}[.filter].sql`
+* **Version**: Must be numeric (e.g., `1`, `1.2`, `1.2.3`)
+* **Description**: Human-readable description of changes
+* **Filter** (optional): Database-specific suffix (e.g., `.postgres`, `.oracle`)
+
+**Examples:**
+[source]
+----
+V1__Create_users_table.sql
+V2.1__Add_email_column.sql
+V3.0.5__Add_indexes.sql
+V1__Create_users_table.postgres.sql
+V1__Create_users_table.oracle.sql
+----
+
+=== Repeatable Migrations
+
+* **Format**: `R__{description}[.filter].sql`
+* **Purpose**: Re-run when content changes (different checksum)
+* **Use cases**: Triggers, views, functions, stored procedures
+
+**Examples:**
+[source]
+----
+R__Create_user_triggers.sql
+R__Update_product_views.sql
+R__Refresh_materialized_views.sql
+R__Create_user_triggers.mysql.sql
+----
+
+== Database-Specific Filtering
+
+BloomDB supports filtering migrations by database type, allowing you to maintain database-specific versions alongside common ones.
+
+=== Filter Modes
+
+* **No filter** (default): Only load migrations without filter suffixes
+* **Hard filter** (`BLOOMDB_FILTER_HARD`): Only load migrations matching specified filter
+* **Soft filter** (`BLOOMDB_FILTER_SOFT`): Prefer filtered migrations, fall back to non-filtered versions
+
+=== Version Identification
+
+BloomDB identifies migrations differently based on their type:
+
+* **Versioned migrations** are identified by version number only (not description):
+** `V1.0__generic.sql` and `V1.0__postgres_specific.postgres.sql` are treated as same version (1.0)
+** Different descriptions are allowed for database-specific implementations of same version
+** In database, only the version number matters for tracking versioned migrations
+
+* **Repeatable migrations** are identified by description:
+** `R__views.sql` and `R__views_postgres.postgres.sql` are treated as different migrations
+** Must have same description to be considered the same repeatable migration
+
+=== Usage Examples
+
+**Hard Filter Mode** (only use filtered migrations):
+[source,bash]
+----
+# Apply only PostgreSQL-specific migrations
+export BLOOMDB_FILTER_HARD="postgres"
+./bloomdb migrate --path ./migrations
+
+# This will load:
+# - V1__Create_users_table.postgres.sql (if it exists)
+# - Skip: V1__Create_users_table.sql (no filter)
+# - Skip: V1__Create_users_table.oracle.sql (different filter)
+----
+
+**Soft Filter Mode** (prefer filtered, fall back to common):
+[source,bash]
+----
+# Prefer Oracle-specific, use common as fallback
+export BLOOMDB_FILTER_SOFT="oracle"
+./bloomdb migrate --path ./migrations
+
+# For V1__Create_users_table:
+# - Use V1__Create_users_table.oracle.sql if it exists
+# - Otherwise fall back to V1__Create_users_table.sql
+# - Skip: V1__Create_users_table.postgres.sql (different filter)
+----
+
+**No Filter Mode** (default behavior):
+[source,bash]
+----
+# Only use common migrations (no filter variable set)
+./bloomdb migrate --path ./migrations
+
+# This will load:
+# - V1__Create_users_table.sql
+# - Skip: V1__Create_users_table.postgres.sql (has filter)
+# - Skip: V1__Create_users_table.oracle.sql (has filter)
+----
+
+=== Filter Priority
+
+When both environment variables are set, `BLOOMDB_FILTER_HARD` takes precedence over `BLOOMDB_FILTER_SOFT`.
+
+=== Use Cases
+
+* **Multi-database support**: Maintain a single migration directory for multiple database types
+* **Database-specific syntax**: Use native features while keeping common migrations portable
+* **Environment-specific migrations**: Different behavior for dev/staging/prod
+* **Gradual migration**: Soft filter mode enables smooth transitions when adding database-specific optimizations
+
+== Migration Content
+
+=== SQL Best Practices
+
+* **Use transactions**: Wrap related statements in transactions
+* **Make migrations idempotent**: Design to be re-runnable where possible
+* **Keep migrations small**: One logical change per migration
+* **Use descriptive names**: `V1__Create_users_table.sql` instead of `V1__table.sql`
+
+=== Example Migration Files
+
+**Simple table creation:**
+[source,sql]
+----
+-- V1__Create_users_table.sql
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for performance
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_email ON users(email);
+----
+
+**Adding a column:**
+[source,sql]
+----
+-- V2__Add_user_profile.sql
+ALTER TABLE users ADD COLUMN profile_id INTEGER;
+ALTER TABLE users ADD CONSTRAINT fk_user_profile 
+    FOREIGN KEY (profile_id) REFERENCES user_profiles(id);
+----
+
+**Repeatable migration (triggers):**
+[source,sql]
+----
+-- R__Update_timestamp_triggers.sql
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_users_updated_at 
+    BEFORE UPDATE ON users 
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+----
+
+== Checksum Validation
+
+BloomDB automatically validates migration file integrity using Flyway-compatible CRC32 checksums.
+
+=== Features
+
+* **Flyway-compatible**: Uses same CRC32 algorithm as Flyway
+* **Line-ending normalization**: Different line endings produce same checksum
+* **UTF-8 BOM handling**: Automatically strips UTF-8 Byte Order Mark
+* **Cross-platform**: Consistent checksums regardless of operating system
+
+=== How It Works
+
+1. **Calculation**: When a migration is applied, BloomDB calculates a CRC32 checksum
+2. **Storage**: The checksum is stored in the migration table
+3. **Validation**: On subsequent runs, checksums are recalculated and compared
+4. **Detection**: Modified files are flagged with "checksum" status
+5. **Blocking**: Migration execution is blocked if checksum mismatches are detected
+
+=== Handling Checksum Issues
+
+If you modify an applied migration file:
+
+[source,bash]
+----
+# Check status (shows checksum warnings)
+./bloomdb info
+
+# Fix by updating checksums (if modification was intentional)
+./bloomdb repair
+
+# Or restore original file (if modification was accidental)
+git checkout V1__Create_users_table.sql
+----
+
+== File Organization Strategies
+
+=== Single Directory
+
+[source]
+----
+migrations/
+├── V1__Create_users.sql
+├── V2__Create_posts.sql
+├── V3__Create_comments.sql
+└── R__Create_triggers.sql
+----
+
+=== Database-Specific Subdirectories
+
+[source]
+----
+migrations/
+├── common/
+│   ├── V1__Create_users.sql
+│   └── V2__Create_posts.sql
+├── postgres/
+│   ├── V1__Create_users.postgres.sql
+│   └── R__Create_triggers.postgres.sql
+└── oracle/
+    ├── V1__Create_users.oracle.sql
+    └── R__Create_triggers.oracle.sql
+----
+
+=== Environment-Based Organization
+
+[source]
+----
+migrations/
+├── dev/
+│   ├── V1__Create_users.sql
+│   └── V2__Add_dev_data.sql
+├── staging/
+│   ├── V1__Create_users.sql
+│   └── V2__Add_staging_data.sql
+└── prod/
+    ├── V1__Create_users.sql
+    └── V2__Add_prod_constraints.sql
+----
+
+== Advanced Features
+
+=== Post-Migration Scripts
+
+For detailed information about post-migration scripts, see link:advanced-usage.adoc[Advanced Usage].
+
+=== Conditional Execution
+
+You can use database-specific syntax within migrations:
+
+[source,sql]
+----
+-- V3__Add_full_text_search.sql
+{{- if eq .DatabaseType "postgresql"}}
+-- PostgreSQL-specific full-text search
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX idx_users_username_gin ON users USING gin(username gin_trgm_ops);
+{{- else if eq .DatabaseType "sqlite"}}
+-- SQLite FTS5 implementation
+CREATE VIRTUAL TABLE users_fts USING fts5(username, email);
+{{- end}}
+----
+
+This requires using post-migration scripts with templating enabled.
+
+== Best Practices
+
+=== File Naming
+
+* **Be descriptive**: `V1__Create_users_table.sql` instead of `V1__table.sql`
+* **Use consistent versioning**: Semantic versioning (1.0, 1.1, 2.0)
+* **Avoid special characters**: Stick to letters, numbers, underscores, and dots
+
+=== Content Organization
+
+* **One change per file**: Don't mix table creation with data insertion
+* **Use transactions**: Wrap multiple statements in transactions
+* **Consider rollbacks**: Design migrations to be reversible where possible
+
+=== Version Control
+
+* **Track all migrations**: Keep migration files in version control
+* **Never modify applied migrations**: Create new migrations instead
+* **Use descriptive commit messages**: Explain what each migration does
+
+== Troubleshooting
+
+=== Common Issues
+
+**"Invalid version format":**
+* Ensure version is numeric: `V1__migration.sql` (not `Vabc__migration.sql`)
+* Use dots for sub-versions: `V1.2.3__migration.sql`
+
+**"Migration not found":**
+* Check file naming convention
+* Verify migration directory path
+* Ensure file has `.sql` extension
+
+**"Checksum mismatch":**
+* File was modified after being applied
+* Use `./bloomdb repair` to update checksums
+* Or restore original file from version control
+
+For more help, see link:troubleshooting.adoc[Troubleshooting].

@@ -1,0 +1,587 @@
+= Configuration Guide
+
+This guide covers all configuration options for BloomDB, including environment variables, command-line flags, and advanced settings.
+
+== Configuration Methods
+
+BloomDB supports multiple ways to configure settings:
+
+1. **Command-line flags** - Highest priority
+2. **Environment variables** - Medium priority  
+3. **Default values** - Lowest priority
+
+== Environment Variables
+
+=== Required Variables
+
+[cols="2*"]
+|===
+| Variable | Description
+
+| `BLOOMDB_CONNECT_STRING` | Database connection string (required for most commands)
+|===
+
+=== Optional Variables
+
+[cols="2*"]
+|===
+| Variable | Description
+
+| `BLOOMDB_PATH` | Directory containing migration files (default: ".")
+| `BLOOMDB_VERSION_TABLE_NAME` | Migration table name (default: "BLOOMDB_VERSION")
+| `BLOOMDB_BASELINE_VERSION` | Default baseline version (default: "1")
+| `BLOOMDB_POST_MIGRATION_SCRIPT` | Path to post-migration SQL script
+| `BLOOMDB_VERBOSE` | Enable verbose/debug output (any non-empty value)
+| `BLOOMDB_LOG_LEVEL` | Log level (debug, info, warn, error, fatal, panic)
+| `BLOOMDB_PRINTER` | Output format (human, test, json)
+|===
+
+=== Database Filtering Variables
+
+[cols="2*"]
+|===
+| Variable | Description
+
+| `BLOOMDB_FILTER_HARD` | Only load migrations with this filter (strict mode)
+| `BLOOMDB_FILTER_SOFT` | Prefer filtered migrations, fall back to non-filtered (compatibility mode)
+|===
+
+== Connection Strings
+
+=== PostgreSQL
+
+[source,bash]
+----
+# Basic connection
+export BLOOMDB_CONNECT_STRING="postgres://username:password@localhost:5432/database_name"
+
+# With SSL options
+export BLOOMDB_CONNECT_STRING="postgres://user:pass@localhost:5432/db?sslmode=disable"
+
+# With connection timeout
+export BLOOMDB_CONNECT_STRING="postgres://user:pass@localhost:5432/db?connect_timeout=10&sslmode=disable"
+
+# With additional parameters
+export BLOOMDB_CONNECT_STRING="postgres://user:pass@localhost:5432/db?sslmode=verify-full&application_name=myapp"
+----
+
+=== SQLite
+
+[source,bash]
+----
+# Absolute path
+export BLOOMDB_CONNECT_STRING="sqlite:/path/to/database.db"
+
+# Relative path
+export BLOOMDB_CONNECT_STRING="sqlite:./data/app.db"
+
+# In-memory database (for testing)
+export BLOOMDB_CONNECT_STRING="sqlite::memory:"
+
+# With additional SQLite options
+export BLOOMDB_CONNECT_STRING="sqlite:/path/to/db.db?cache=shared&mode=rwc"
+----
+
+=== Oracle
+
+[source,bash]
+----
+# Basic connection
+export BLOOMDB_CONNECT_STRING="oracle://username:password@localhost:1521/service_name"
+
+# With SID instead of service name
+export BLOOMDB_CONNECT_STRING="oracle://user:pass@host:1521:sid"
+
+# With additional parameters
+export BLOOMDB_CONNECT_STRING="oracle://user:pass@host:1521/service?ssl_server_dn_match=true&standalone_connection=1"
+----
+
+== Migration Path Configuration
+
+=== Setting Migration Directory
+
+**Via Environment Variable:**
+[source,bash]
+----
+export BLOOMDB_PATH="./database/migrations"
+./bloomdb migrate
+----
+
+**Via Command Line:**
+[source,bash]
+----
+./bloomdb migrate --path ./database/migrations
+----
+
+**Relative vs Absolute Paths:**
+[source,bash]
+# Relative to current directory
+export BLOOMDB_PATH="./migrations"
+
+# Absolute path
+export BLOOMDB_PATH="/opt/app/migrations"
+
+# Home directory expansion
+export BLOOMDB_PATH="~/migrations"
+----
+
+=== Directory Structure Examples
+
+**Simple Structure:**
+[source]
+----
+migrations/
+├── V1__Create_users_table.sql
+├── V2__Create_posts_table.sql
+└── R__Create_triggers.sql
+----
+
+**Database-Specific Structure:**
+[source]
+----
+migrations/
+├── V1__Create_users_table.sql
+├── V1__Create_users_table.postgres.sql
+├── V1__Create_users_table.oracle.sql
+├── V2__Create_posts_table.sql
+└── R__Create_triggers.sql
+    └── R__Create_triggers.mysql.sql
+----
+
+== Table Name Configuration
+
+=== Custom Migration Table
+
+**Via Environment Variable:**
+[source,bash]
+----
+export BLOOMDB_VERSION_TABLE_NAME="app_migrations"
+./bloomdb migrate
+----
+
+**Via Command Line:**
+[source,bash]
+----
+./bloomdb migrate --table-name "app_migrations"
+----
+
+=== Use Cases
+
+* **Multiple applications**: Different apps sharing same database
+* **Legacy systems**: Existing migration tables with different names
+* **Testing**: Separate migration tracking for test environments
+* **Migration tools**: Transitioning from other tools with existing tables
+
+== Database Filtering Configuration
+
+=== Hard Filter Mode
+
+Only load migrations matching the specified filter:
+
+[source,bash]
+----
+# Only use PostgreSQL-specific migrations
+export BLOOMDB_FILTER_HARD="postgres"
+./bloomdb migrate
+
+# Result:
+# - V1__Create_users_table.postgres.sql ✓
+# - V1__Create_users_table.sql ✗ (no filter)
+# - V1__Create_users_table.oracle.sql ✗ (wrong filter)
+----
+
+=== Soft Filter Mode
+
+Prefer filtered migrations, fall back to common versions:
+
+[source,bash]
+----
+# Prefer Oracle-specific, use common as fallback
+export BLOOMDB_FILTER_SOFT="oracle"
+./bloomdb migrate
+
+# For V1__Create_users_table:
+# - Try: V1__Create_users_table.oracle.sql
+# - Fallback: V1__Create_users_table.sql (if oracle version doesn't exist)
+# - Skip: V1__Create_users_table.postgres.sql (different filter)
+----
+
+=== Filter Priority
+
+When both variables are set, `BLOOMDB_FILTER_HARD` takes precedence:
+
+[source,bash]
+----
+export BLOOMDB_FILTER_HARD="postgres"
+export BLOOMDB_FILTER_SOFT="oracle"
+./bloomdb migrate  # Uses hard filter (postgres)
+----
+
+=== Common Filter Values
+
+[source,bash]
+----
+# Database types
+export BLOOMDB_FILTER_HARD="postgres"     # PostgreSQL
+export BLOOMDB_FILTER_HARD="oracle"       # Oracle
+export BLOOMDB_FILTER_HARD="mysql"        # MySQL
+export BLOOMDB_FILTER_HARD="sqlite"       # SQLite
+
+# Environment types
+export BLOOMDB_FILTER_HARD="dev"          # Development
+export BLOOMDB_FILTER_HARD="staging"      # Staging
+export BLOOMDB_FILTER_HARD="prod"         # Production
+----
+
+== Output Configuration
+
+=== Verbose Mode
+
+Enable detailed output for debugging and monitoring:
+
+[source,bash]
+----
+# Via environment variable
+export BLOOMDB_VERBOSE="1"
+./bloomdb migrate
+
+# Via command line
+./bloomdb migrate --verbose
+./bloomdb migrate -v
+----
+
+=== Log Levels
+
+Control the amount of log output:
+
+[source,bash]
+----
+# Via environment variable
+export BLOOMDB_LOG_LEVEL="debug"
+./bloomdb migrate
+
+# Via command line
+./bloomdb migrate --log-level debug
+----
+
+**Available Log Levels:**
+* `debug` - Most verbose, shows SQL queries and internal state
+* `info` - General information about migration progress
+* `warn` - Warnings and important messages (default)
+* `error` - Only error messages
+* `fatal` - Only fatal errors
+* `panic` - Only panic messages
+
+=== Output Formats
+
+Choose different output formats for different use cases:
+
+[source,bash]
+----
+# Human-readable output (default)
+export BLOOMDB_PRINTER="human"
+./bloomdb info
+
+# JSON output for automation
+export BLOOMDB_PRINTER="json"
+./bloomdb info
+
+# Test output for unit testing
+export BLOOMDB_PRINTER="test"
+./bloomdb info
+----
+
+**Output Format Examples:**
+
+*Human Format:*
+[source]
+----
+✓ Applied: V1 - Create users table (0.045s)
+✓ Applied: V2 - Create posts table (0.032s)
+⚠ Warning: R1 - Create triggers (checksum mismatch)
+----
+
+*JSON Format:*
+[source,json]
+----
+{
+  "migrations": [
+    {
+      "version": "1",
+      "description": "Create users table",
+      "status": "success",
+      "execution_time": 0.045
+    },
+    {
+      "version": "2", 
+      "description": "Create posts table",
+      "status": "success",
+      "execution_time": 0.032
+    }
+  ]
+}
+----
+
+*Test Format:*
+[source]
+----
+INFO: Applied migration V1 - Create users table
+SUCCESS: Migration completed successfully
+INFO: Applied migration V2 - Create posts table
+----
+
+== Baseline Configuration
+
+=== Setting Baseline Version
+
+**Via Environment Variable:**
+[source,bash]
+----
+export BLOOMDB_BASELINE_VERSION="2.5"
+./bloomdb baseline
+----
+
+**Via Command Line:**
+[source,bash]
+----
+./bloomdb baseline --baseline-version 2.5
+----
+
+=== Baseline Version Priority
+
+1. **Existing database baseline** - Always used if present
+2. **CLI flag** (`--baseline-version`) - Overrides environment
+3. **Environment variable** (`BLOOMDB_BASELINE_VERSION`) - Default if no CLI flag
+4. **Default value** - "1" if nothing else specified
+
+=== Use Cases
+
+[source,bash]
+----
+# Existing database with known schema version
+export BLOOMDB_BASELINE_VERSION="5.2"
+./bloomdb baseline
+
+# Team standard baseline version
+export BLOOMDB_BASELINE_VERSION="1.0"
+./bloomdb baseline
+
+# Temporary baseline for testing
+./bloomdb baseline --baseline-version 0.1
+----
+
+== Post-Migration Script Configuration
+
+=== Setting Post-Migration Script
+
+**Via Environment Variable:**
+[source,bash]
+----
+export BLOOMDB_POST_MIGRATION_SCRIPT="./scripts/post_migration.sql"
+./bloomdb migrate
+----
+
+**Via Command Line:**
+[source,bash]
+----
+./bloomdb migrate --post-migration-script ./scripts/post_migration.sql
+----
+
+=== Script Path Resolution
+
+* **Absolute paths**: Used as-is
+* **Relative paths**: Resolved from migration directory
+* **Template variables**: Script supports Go templating with migration metadata
+
+[source,bash]
+----
+# Absolute path
+export BLOOMDB_POST_MIGRATION_SCRIPT="/opt/app/scripts/post.sql"
+
+# Relative to migration directory
+export BLOOMDB_POST_MIGRATION_SCRIPT="../shared/post.sql"
+
+# Relative to current directory
+export BLOOMDB_POST_MIGRATION_SCRIPT="./scripts/post.sql"
+----
+
+== Configuration Examples
+
+=== Development Environment
+
+[source,bash]
+----
+#!/bin/bash
+# dev-setup.sh
+
+export BLOOMDB_CONNECT_STRING="postgres://dev:dev@localhost:5432/myapp_dev"
+export BLOOMDB_PATH="./migrations/dev"
+export BLOOMDB_VERSION_TABLE_NAME="dev_migrations"
+export BLOOMDB_FILTER_SOFT="dev"
+export BLOOMDB_VERBOSE="1"
+export BLOOMDB_LOG_LEVEL="debug"
+
+echo "Development environment configured"
+./bloomdb migrate
+----
+
+=== Staging Environment
+
+[source,bash]
+----
+#!/bin/bash
+# staging-setup.sh
+
+export BLOOMDB_CONNECT_STRING="postgres://staging:staging@db.company.com:5432/myapp_staging"
+export BLOOMDB_PATH="./migrations/staging"
+export BLOOMDB_FILTER_HARD="staging"
+export BLOOMDB_LOG_LEVEL="info"
+
+echo "Staging environment configured"
+./bloomdb migrate
+----
+
+=== Production Environment
+
+[source,bash]
+----
+#!/bin/bash
+# prod-setup.sh
+
+export BLOOMDB_CONNECT_STRING="${PROD_DB_CONNECTION}"  # From secure source
+export BLOOMDB_PATH="./migrations/prod"
+export BLOOMDB_FILTER_HARD="prod"
+export BLOOMDB_LOG_LEVEL="warn"
+
+echo "Production environment configured"
+./bloomdb migrate
+----
+
+=== CI/CD Pipeline
+
+[source,bash]
+----
+#!/bin/bash
+# ci-migrate.sh
+
+set -e  # Exit on any error
+
+# Use environment variables from CI system
+export BLOOMDB_CONNECT_STRING="${DATABASE_URL}"
+export BLOOMDB_PATH="./migrations"
+export BLOOMDB_LOG_LEVEL="info"
+
+# Run migrations
+./bloomdb migrate
+
+# Verify migration status
+./bloomdb info
+----
+
+=== Docker Environment
+
+[source,dockerfile]
+----
+FROM golang:1.25-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN go build -o bloomdb .
+
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+WORKDIR /app
+COPY --from=builder /app/bloomdb .
+COPY --from=builder /app/migrations ./migrations
+
+# Environment variables for container
+ENV BLOOMDB_CONNECT_STRING="postgres://user:pass@db:5432/myapp"
+ENV BLOOMDB_PATH="./migrations"
+ENV BLOOMDB_LOG_LEVEL="info"
+
+CMD ["./bloomdb", "migrate"]
+----
+
+== Configuration File Support
+
+While BloomDB doesn't natively support configuration files, you can create wrapper scripts:
+
+[source,bash]
+----
+#!/bin/bash
+# bloomdb-config.sh - Load configuration from .env file
+
+if [ -f ".env" ]; then
+    export $(cat .env | grep -v '^#' | xargs)
+fi
+
+# Run bloomdb with loaded environment
+./bloomdb "$@"
+----
+
+[source,bash]
+----
+# .env file example
+BLOOMDB_CONNECT_STRING="postgres://user:pass@localhost/mydb"
+BLOOMDB_PATH="./migrations"
+BLOOMDB_VERBOSE="1"
+BLOOMDB_LOG_LEVEL="info"
+----
+
+== Best Practices
+
+=== Security
+
+* **Use environment variables**: Don't pass connection strings in command line arguments
+* **Secure credentials**: Store database credentials in secure locations
+* **Limit permissions**: Use database users with minimal required permissions
+* **Audit logs**: Enable appropriate log levels for security monitoring
+
+=== Performance
+
+* **Appropriate log levels**: Use `warn` or `error` in production
+* **Connection pooling**: Configure database connection pooling in connection string
+* **Timeout settings**: Set appropriate connection and query timeouts
+* **Batch operations**: Group related changes in single migrations
+
+=== Maintainability
+
+* **Consistent naming**: Use standard environment variable naming
+* **Documentation**: Document custom configuration in project README
+* **Version control**: Keep configuration files in version control (except secrets)
+* **Environment separation**: Use different configurations for different environments
+
+== Troubleshooting Configuration
+
+=== Common Issues
+
+**"Connection string required":**
+[source,bash]
+----
+# Check if environment variable is set
+echo $BLOOMDB_CONNECT_STRING
+
+# Set it if missing
+export BLOOMDB_CONNECT_STRING="your_connection_string"
+----
+
+**"Migration directory not found":**
+[source,bash]
+----
+# Verify path exists
+ls -la $BLOOMDB_PATH
+
+# Use absolute path
+export BLOOMDB_PATH="/full/path/to/migrations"
+----
+
+**"Permission denied":**
+[source,bash]
+----
+# Check file permissions
+ls -la ./migrations/*.sql
+
+# Fix permissions
+chmod 644 ./migrations/*.sql
+----
+
+For more help, see link:troubleshooting.adoc[Troubleshooting].

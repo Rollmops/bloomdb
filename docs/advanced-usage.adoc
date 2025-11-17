@@ -1,0 +1,700 @@
+= Advanced Usage
+
+This guide covers advanced BloomDB features including post-migration scripts, database-specific filtering, and complex deployment scenarios.
+
+== Post-Migration Scripts
+
+BloomDB supports post-migration SQL scripts that execute after all migrations complete successfully. These scripts support Go templating and have access to migration metadata.
+
+=== Basic Usage
+
+Post-migration scripts are only executed when explicitly specified:
+
+[source,bash]
+----
+# Using CLI flag
+./bloomdb migrate --post-migration-script ./custom/post.sql
+
+# Using environment variable
+export BLOOMDB_POST_MIGRATION_SCRIPT="./custom/post.sql"
+./bloomdb migrate
+
+# Relative path (resolved from migration directory)
+./bloomdb migrate --post-migration-script ../shared/post_migration.sql
+----
+
+=== Template Variables
+
+Post-migration scripts have access to following variables in your Go templates:
+
+[cols="2*"]
+|===
+| Variable | Type & Description
+
+| `.CreatedObjects` | `[]DatabaseObject` - List of database objects created during migration
+| `.DeletedObjects` | `[]DatabaseObject` - List of database objects deleted during migration
+| `.MigrationPath` | `string` - Path to the migration directory
+| `.DatabaseType` | `string` - Database type (sqlite, postgresql, oracle)
+| `.TableName` | `string` - Name of the migration table
+|===
+
+Each `DatabaseObject` contains:
+* `.Type` - Object type (table, view, index, etc.)
+* `.Name` - Object name
+
+=== Example Post-Migration Script
+
+Here's a comprehensive example that demonstrates all available features:
+
+[source,sql]
+----
+-- Post-migration script with Go templating (PostgreSQL compatible)
+-- This script executes after all migrations are completed successfully
+
+{{- if .CreatedObjects}}
+-- Log all created objects
+DO $$
+BEGIN
+    RAISE NOTICE 'Migration completed successfully!';
+    RAISE NOTICE 'Created {{len .CreatedObjects}} database objects:';
+    {{- range .CreatedObjects}}
+    RAISE NOTICE '  - {{.Type}}: {{.Name}}';
+    {{- end}}
+END $$;
+
+{{- if .DeletedObjects}}
+-- Log all deleted objects
+DO $$
+BEGIN
+    RAISE NOTICE 'Deleted {{len .DeletedObjects}} database objects:';
+    {{- range .DeletedObjects}}
+    RAISE NOTICE '  - {{.Type}}: {{.Name}}';
+    {{- end}}
+END $$;
+{{- end}}
+
+-- Create a summary table with migration information
+CREATE TABLE IF NOT EXISTS migration_summary (
+    id SERIAL PRIMARY KEY,
+    migration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    database_type VARCHAR(50) NOT NULL,
+    total_objects INTEGER NOT NULL,
+    notes TEXT
+);
+
+-- Insert summary record
+INSERT INTO migration_summary (database_type, total_objects, notes)
+VALUES (
+    '{{.DatabaseType}}',
+    {{len .CreatedObjects}},
+    'Migration completed. Created objects: {{range .CreatedObjects}}{{.Type}}:{{.Name}} {{end}}{{if .DeletedObjects}}Deleted objects: {{range .DeletedObjects}}{{.Type}}:{{.Name}} {{end}}{{end}}'
+);
+
+{{- else if .DeletedObjects}}
+-- Only objects were deleted during migration
+DO $$
+BEGIN
+    RAISE NOTICE 'Migration completed but objects were deleted';
+    RAISE NOTICE 'Deleted {{len .DeletedObjects}} database objects:';
+    {{- range .DeletedObjects}}
+    RAISE NOTICE '  - {{.Type}}: {{.Name}}';
+    {{- end}}
+END $$;
+
+INSERT INTO migration_summary (database_type, total_objects, notes)
+VALUES (
+    '{{.DatabaseType}}',
+    0,
+    'Migration completed. Deleted objects: {{range .DeletedObjects}}{{.Type}}:{{.Name}} {{end}}'
+);
+
+{{- else}}
+-- No objects were created or deleted during migration
+DO $$
+BEGIN
+    RAISE NOTICE 'Migration completed but no database objects were changed';
+END $$;
+
+INSERT INTO migration_summary (database_type, total_objects, notes)
+VALUES (
+    '{{.DatabaseType}}',
+    0,
+    'Migration completed but no database objects were changed'
+);
+{{- end}}
+----
+
+=== Template Syntax Examples
+
+**Conditional logic:**
+[source,sql]
+----
+{{- if .CreatedObjects}}
+-- Objects were created
+SELECT '{{len .CreatedObjects}} objects created';
+{{- end}}
+
+{{- if and .CreatedObjects .DeletedObjects}}
+-- Both creation and deletion occurred
+SELECT 'Schema changes detected';
+{{- end}}
+----
+
+**Looping through objects:**
+[source,sql]
+----
+{{- range .CreatedObjects}}
+-- Process each created object
+{{- if eq .Type "table"}}
+-- Handle table creation: {{.Name}}
+{{- else if eq .Type "index"}}
+-- Handle index creation: {{.Name}}
+{{- end}}
+{{- end}}
+----
+
+**Database-specific logic:**
+[source,sql]
+----
+{{- if eq .DatabaseType "postgresql"}}
+-- PostgreSQL-specific code
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+{{- else if eq .DatabaseType "sqlite"}}
+-- SQLite-specific code
+PRAGMA foreign_keys = ON;
+{{- end}}
+----
+
+=== Use Cases
+
+Post-migration scripts are perfect for:
+
+* **Documentation**: Auto-generate documentation for created objects
+* **Notifications**: Send alerts about schema changes
+* **Audit logging**: Record all changes in audit tables
+* **Data seeding**: Populate reference data after schema creation
+* **Performance optimization**: Create indexes after data loading
+* **Integration**: Trigger external processes or API calls
+* **Reporting**: Generate migration summary reports
+
+=== Best Practices
+
+* **Keep scripts idempotent**: Design scripts to run multiple times safely
+* **Use conditional logic**: Handle cases where no objects are created/deleted
+* **Database compatibility**: Use `{{.DatabaseType}}` for database-specific code
+* **Error handling**: Wrap operations in proper error handling
+* **Testing**: Test templates with different migration scenarios
+* **Documentation**: Document what your post-migration scripts do
+
+=== Error Handling
+
+If a post-migration script fails:
+* The error is logged but doesn't rollback successful migrations
+* A warning message is displayed
+* The migration process is still considered successful
+* Fix the script and re-run to execute it properly
+
+== Database-Specific Filtering
+
+=== Advanced Filtering Scenarios
+
+**Multi-Database Development:**
+[source,bash]
+----
+# Development setup for multiple databases
+export BLOOMDB_FILTER_SOFT="postgres"
+./bloomdb migrate --path ./migrations  # Uses PostgreSQL-specific when available
+
+export BLOOMDB_FILTER_SOFT="oracle"
+./bloomdb migrate --path ./migrations  # Uses Oracle-specific when available
+----
+
+**Environment-Specific Migrations:**
+[source,bash]
+----
+# Development environment
+export BLOOMDB_FILTER_HARD="dev"
+./bloomdb migrate --path ./migrations
+
+# Production environment
+export BLOOMDB_FILTER_HARD="prod"
+./bloomdb migrate --path ./migrations
+----
+
+**Feature Flag Migrations:**
+[source,bash]
+----
+# Enable feature-specific migrations
+export BLOOMDB_FILTER_HARD="feature_new_ui"
+./bloomdb migrate --path ./migrations
+
+# Standard migrations
+unset BLOOMDB_FILTER_HARD
+./bloomdb migrate --path ./migrations
+----
+
+=== Complex Migration Structure
+
+[source]
+----
+migrations/
+├── common/
+│   ├── V1__Create_users_table.sql
+│   ├── V2__Create_posts_table.sql
+│   └── R__Create_triggers.sql
+├── postgres/
+│   ├── V1__Create_users_table.postgres.sql
+│   ├── V2__Add_full_text_search.postgres.sql
+│   └── R__Create_triggers.postgres.sql
+├── oracle/
+│   ├── V1__Create_users_table.oracle.sql
+│   ├── V2__Add_sequences.oracle.sql
+│   └── R__Create_triggers.oracle.sql
+└── mysql/
+    ├── V1__Create_users_table.mysql.sql
+    ├── V2__Add_auto_increment.mysql.sql
+    └── R__Create_triggers.mysql.sql
+----
+
+=== Filter Selection Logic
+
+**Hard Filter Selection:**
+1. Look for migrations with exact filter match
+2. If no match found, migration is skipped
+3. Only exact matches are loaded
+
+**Soft Filter Selection:**
+1. Look for migrations with exact filter match
+2. If no match found, look for migration without filter
+3. If neither exists, migration is skipped
+4. Prefer filtered version, fallback to common version
+
+== Multiple Environments
+
+=== Environment-Based Configuration
+
+**Development Environment:**
+[source,bash]
+----
+#!/bin/bash
+# dev-migrate.sh
+
+export BLOOMDB_CONNECT_STRING="postgres://dev:dev@localhost:5432/myapp_dev"
+export BLOOMDB_PATH="./migrations/dev"
+export BLOOMDB_FILTER_SOFT="dev"
+export BLOOMDB_VERBOSE="1"
+export BLOOMDB_LOG_LEVEL="debug"
+export BLOOMDB_POST_MIGRATION_SCRIPT="./scripts/dev_post.sql"
+
+echo "Running development migrations..."
+./bloomdb migrate
+----
+
+**Staging Environment:**
+[source,bash]
+----
+#!/bin/bash
+# staging-migrate.sh
+
+export BLOOMDB_CONNECT_STRING="postgres://staging:staging@db.company.com:5432/myapp_staging"
+export BLOOMDB_PATH="./migrations/staging"
+export BLOOMDB_FILTER_HARD="staging"
+export BLOOMDB_LOG_LEVEL="info"
+export BLOOMDB_POST_MIGRATION_SCRIPT="./scripts/staging_post.sql"
+
+echo "Running staging migrations..."
+./bloomdb migrate
+----
+
+**Production Environment:**
+[source,bash]
+----
+#!/bin/bash
+# prod-migrate.sh
+
+export BLOOMDB_CONNECT_STRING="${PROD_DB_CONNECTION}"  # From secure source
+export BLOOMDB_PATH="./migrations/prod"
+export BLOOMDB_FILTER_HARD="prod"
+export BLOOMDB_LOG_LEVEL="warn"
+export BLOOMDB_POST_MIGRATION_SCRIPT="./scripts/prod_post.sql"
+
+echo "Running production migrations..."
+./bloomdb migrate
+----
+
+=== Docker Multi-Stage Builds
+
+[source,dockerfile]
+----
+# Multi-stage Dockerfile for different environments
+FROM golang:1.25-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN go build -o bloomdb .
+
+# Development image
+FROM alpine:latest AS development
+RUN apk --no-cache add ca-certificates
+WORKDIR /app
+COPY --from=builder /app/bloomdb .
+COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/scripts ./scripts
+
+ENV BLOOMDB_CONNECT_STRING="postgres://dev:dev@db:5432/myapp_dev"
+ENV BLOOMDB_PATH="./migrations"
+ENV BLOOMDB_FILTER_SOFT="dev"
+ENV BLOOMDB_VERBOSE="1"
+
+CMD ["./bloomdb", "migrate"]
+
+# Production image
+FROM alpine:latest AS production
+RUN apk --no-cache add ca-certificates
+WORKDIR /app
+COPY --from=builder /app/bloomdb .
+COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/scripts ./scripts
+
+ENV BLOOMDB_CONNECT_STRING="${DATABASE_URL}"
+ENV BLOOMDB_PATH="./migrations"
+ENV BLOOMDB_FILTER_HARD="prod"
+ENV BLOOMDB_LOG_LEVEL="warn"
+
+CMD ["./bloomdb", "migrate"]
+----
+
+== CI/CD Integration
+
+=== GitHub Actions
+
+[source,yaml]
+----
+name: Database Migrations
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+    
+    - name: Build BloomDB
+      run: go build -o bloomdb .
+    
+    - name: Run Migrations
+      env:
+        BLOOMDB_CONNECT_STRING: postgres://postgres:postgres@localhost:5432/testdb
+        BLOOMDB_PATH: ./migrations
+        BLOOMDB_LOG_LEVEL: info
+      run: |
+        ./bloomdb migrate
+        ./bloomdb info
+----
+
+=== GitLab CI
+
+[source,yaml]
+----
+migrate:
+  stage: deploy
+  image: golang:1.25-alpine
+  services:
+    - postgres:15-alpine
+  variables:
+    POSTGRES_DB: testdb
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    BLOOMDB_CONNECT_STRING: postgres://postgres:postgres@postgres:5432/testdb
+    BLOOMDB_PATH: ./migrations
+    BLOOMDB_LOG_LEVEL: info
+  
+  before_script:
+    - apk add --no-cache git
+    - go build -o bloomdb .
+  
+  script:
+    - ./bloomdb migrate
+    - ./bloomdb info
+  
+  only:
+    - main
+    - develop
+----
+
+=== Jenkins Pipeline
+
+[source,groovy]
+----
+pipeline {
+    agent any
+    
+    environment {
+        BLOOMDB_CONNECT_STRING = credentials('postgres-db')
+        BLOOMDB_PATH = './migrations'
+        BLOOMDB_LOG_LEVEL = 'info'
+    }
+    
+    stages {
+        stage('Build') {
+            steps {
+                sh 'go build -o bloomdb .'
+            }
+        }
+        
+        stage('Migrate') {
+            steps {
+                sh './bloomdb migrate'
+                sh './bloomdb info'
+            }
+        }
+    }
+}
+----
+
+== Performance Optimization
+
+=== Migration Performance
+
+**Optimize Migration Files:**
+[source,sql]
+----
+-- Good: Use transactions
+BEGIN;
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) NOT NULL
+);
+CREATE INDEX idx_users_username ON users(username);
+COMMIT;
+
+-- Bad: Multiple separate statements
+CREATE TABLE users (id SERIAL PRIMARY KEY, username VARCHAR(50) NOT NULL);
+CREATE INDEX idx_users_username ON users(username);
+----
+
+**Batch Operations:**
+[source,sql]
+----
+-- Good: Batch inserts
+INSERT INTO users (username, email) VALUES
+    ('user1', 'user1@example.com'),
+    ('user2', 'user2@example.com'),
+    ('user3', 'user3@example.com');
+
+-- Bad: Multiple individual inserts
+INSERT INTO users (username, email) VALUES ('user1', 'user1@example.com');
+INSERT INTO users (username, email) VALUES ('user2', 'user2@example.com');
+INSERT INTO users (username, email) VALUES ('user3', 'user3@example.com');
+----
+
+=== Database-Specific Optimizations
+
+**PostgreSQL:**
+[source,sql]
+----
+-- Use COPY for bulk data loading
+COPY users (username, email) FROM '/tmp/users.csv' WITH CSV;
+
+-- Create indexes after data loading
+CREATE INDEX CONCURRENTLY idx_users_email ON users(email);
+----
+
+**SQLite:**
+[source,sql]
+----
+-- Use WAL mode for better concurrency
+PRAGMA journal_mode = WAL;
+
+-- Optimize for bulk operations
+PRAGMA synchronous = OFF;
+PRAGMA cache_size = 10000;
+----
+
+**Oracle:**
+[source,sql]
+----
+-- Use APPEND hint for direct path loading
+INSERT /*+ APPEND */ INTO large_table (col1, col2) VALUES (...);
+
+-- Use parallel DML
+ALTER SESSION ENABLE PARALLEL DML;
+----
+
+== Monitoring and Observability
+
+=== Migration Metrics
+
+**Post-Migration Monitoring Script:**
+[source,sql]
+----
+-- Create migration metrics table
+CREATE TABLE IF NOT EXISTS migration_metrics (
+    id NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    migration_version VARCHAR(50),
+    execution_time_ms NUMBER,
+    objects_created NUMBER,
+    objects_deleted NUMBER,
+    migration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert metrics (called from post-migration script)
+INSERT INTO migration_metrics (migration_version, execution_time_ms, objects_created, objects_deleted)
+VALUES (
+    '{{.LastMigrationVersion}}',
+    {{.TotalExecutionTime}},
+    {{len .CreatedObjects}},
+    {{len .DeletedObjects}}
+);
+----
+
+**Application Integration:**
+[source,bash]
+----
+#!/bin/bash
+# monitor-migrations.sh
+
+# Run migrations and capture output
+MIGRATION_OUTPUT=$(./bloomdb migrate --post-migration-script ./scripts/monitoring.sql 2>&1)
+MIGRATION_EXIT_CODE=$?
+
+# Send metrics to monitoring system
+if [ $MIGRATION_EXIT_CODE -eq 0 ]; then
+    curl -X POST https://monitoring.company.com/api/migrations \
+        -H "Content-Type: application/json" \
+        -d "{\"status\": \"success\", \"output\": \"$MIGRATION_OUTPUT\"}"
+else
+    curl -X POST https://monitoring.company.com/api/migrations \
+        -H "Content-Type: application/json" \
+        -d "{\"status\": \"failed\", \"output\": \"$MIGRATION_OUTPUT\"}"
+fi
+
+# Exit with same code as migration
+exit $MIGRATION_EXIT_CODE
+----
+
+=== Logging Integration
+
+**Structured Logging:**
+[source,bash]
+----
+#!/bin/bash
+# migrate-with-logging.sh
+
+export BLOOMDB_PRINTER="json"
+export BLOOMDB_LOG_LEVEL="info"
+
+# Run migrations and capture JSON output
+MIGRATION_OUTPUT=$(./bloomdb migrate 2>&1)
+echo "$MIGRATION_OUTPUT" | jq '.' >> /var/log/bloomdb/migrations.log
+
+# Extract key metrics for monitoring
+MIGRATION_COUNT=$(echo "$MIGRATION_OUTPUT" | jq '.migrations | length')
+SUCCESS_COUNT=$(echo "$MIGRATION_OUTPUT" | jq '.migrations | map(select(.status == "success")) | length')
+
+echo "Migration completed: $MIGRATION_COUNT migrations, $SUCCESS_COUNT successful"
+----
+
+== Advanced Troubleshooting
+
+=== Complex Scenarios
+
+**Partial Migration Failure:**
+[source,bash]
+----
+# Identify failed migration
+./bloomdb info
+
+# Fix the failed migration SQL
+# Edit V3__Add_foreign_keys.sql
+
+# Repair and continue
+./bloomdb repair
+./bloomdb migrate
+----
+
+**Checksum Conflicts:**
+[source,bash]
+----
+# Check what changed
+./bloomdb info | grep "checksum"
+
+# Review changes
+git diff V1__Create_users_table.sql
+
+# Options:
+# 1. Restore original file if change was accidental
+git checkout V1__Create_users_table.sql
+
+# 2. Update checksums if change was intentional
+./bloomdb repair
+
+# 3. Create new migration if change is significant
+cp V1__Create_users_table.sql V1.1__Add_user_columns.sql
+git checkout V1__Create_users_table.sql
+----
+
+**Database-Specific Issues:**
+[source,bash]
+----
+# Test with different database filters
+export BLOOMDB_FILTER_HARD="postgres"
+./bloomdb migrate --path ./migrations
+
+export BLOOMDB_FILTER_HARD="sqlite"
+./bloomdb migrate --path ./migrations
+
+# Use verbose logging to debug
+export BLOOMDB_VERBOSE="1"
+export BLOOMDB_LOG_LEVEL="debug"
+./bloomdb migrate
+----
+
+== Best Practices
+
+=== Migration Strategy
+
+* **Incremental changes**: Small, focused migrations
+* **Backward compatibility**: Design changes to work with existing applications
+* **Rollback planning**: Always consider how to undo changes
+* **Testing**: Test migrations in staging before production
+* **Documentation**: Document complex migrations and their rationale
+
+=== Team Collaboration
+
+* **Code review**: Review all migration changes
+* **Branch strategy**: Use feature branches for migration development
+* **Conflict resolution**: Plan for migration conflicts in parallel development
+* **Communication**: Coordinate database changes across teams
+
+=== Production Readiness
+
+* **Backup strategy**: Always backup before production migrations
+* **Rollback plan**: Have documented rollback procedures
+* **Monitoring**: Set up alerts for migration failures
+* **Maintenance windows**: Schedule migrations during low-traffic periods
+
+For more help, see link:troubleshooting.adoc[Troubleshooting].

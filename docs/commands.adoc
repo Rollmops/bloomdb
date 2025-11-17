@@ -1,0 +1,367 @@
+= Commands Reference
+
+This section provides detailed reference for all BloomDB commands.
+
+== baseline
+
+Initialize migration tracking for existing databases.
+
+=== Usage
+
+[source,bash]
+----
+./bloomdb baseline [flags]
+----
+
+=== Flags
+
+[cols="2*"]
+|===
+| Flag | Description
+
+| `--baseline-version string` | Baseline version to use (default: "1")
+| `--path string` | Directory containing migration files (default: ".")
+| `--table-name string` | Migration table name (default: "BLOOMDB_VERSION")
+| `--conn string` | Database connection string
+| `--log-level string` | Log level (debug, info, warn, error, fatal, panic)
+| `--verbose` | Enable verbose output
+|===
+
+=== Environment Variables
+
+[cols="2*"]
+|===
+| Variable | Description
+
+| `BLOOMDB_CONNECT_STRING` | Database connection string (required)
+| `BLOOMDB_BASELINE_VERSION` | Default baseline version (overridden by --baseline-version flag)
+| `BLOOMDB_PATH` | Directory containing migration files
+| `BLOOMDB_VERSION_TABLE_NAME` | Migration table name
+| `BLOOMDB_VERBOSE` | Enable verbose output
+|===
+
+=== Baseline Version Priority
+
+BloomDB determines baseline version using the following priority order (highest to lowest):
+
+1. **Existing database baseline** - If a baseline record already exists in the database, that version is always used. This prevents accidental baseline version changes and ensures consistency.
+2. **CLI flag** (`--baseline-version`) - Explicitly specified version on command line
+3. **Environment variable** (`BLOOMDB_BASELINE_VERSION`) - Version set in environment
+4. **Default value** - Version "1" if nothing else is specified
+
+When an existing baseline is found, the command will display a success message showing the existing version, even if you requested a different version.
+
+=== Examples
+
+[source,bash]
+----
+# Use default baseline version (1)
+./bloomdb baseline
+
+# Specify baseline version via CLI flag
+./bloomdb baseline --baseline-version 2.5
+
+# Use environment variable
+export BLOOMDB_BASELINE_VERSION="3.0"
+./bloomdb baseline
+
+# If baseline already exists, existing version takes priority
+./bloomdb baseline --baseline-version 5.0  # Will use existing version from DB instead
+----
+
+=== When to Use
+
+* **Existing databases**: When you have a database with existing schema but no migration tracking
+* **Team adoption**: When introducing BloomDB to a project that already has data
+* **Migration imports**: When switching from another migration tool to BloomDB
+
+== migrate
+
+Apply pending migrations to the database.
+
+=== Usage
+
+[source,bash]
+----
+./bloomdb migrate [flags]
+----
+
+=== Flags
+
+[cols="2*"]
+|===
+| Flag | Description
+
+| `--path string` | Directory containing migration files (default: ".")
+| `--table-name string` | Migration table name (default: "BLOOMDB_VERSION")
+| `--conn string` | Database connection string
+| `--post-migration-script string` | Path to post-migration SQL script
+| `--log-level string` | Log level (debug, info, warn, error, fatal, panic)
+| `--verbose` | Enable verbose output
+|===
+
+=== Environment Variables
+
+[cols="2*"]
+|===
+| Variable | Description
+
+| `BLOOMDB_CONNECT_STRING` | Database connection string
+| `BLOOMDB_PATH` | Directory containing migration files
+| `BLOOMDB_VERSION_TABLE_NAME` | Migration table name
+| `BLOOMDB_POST_MIGRATION_SCRIPT` | Path to post-migration SQL script
+| `BLOOMDB_VERBOSE` | Enable verbose output
+|===
+
+=== Migration Process
+
+1. **Version Validation**: Checks that all versioned migrations have valid format
+2. **Database Connection**: Connects to the specified database
+3. **Table Check**: Ensures migration table exists
+4. **Version Comparison**: Compares file versions with database records
+5. **Execution**: Runs pending migrations in order
+6. **Recording**: Stores migration records with execution time and status
+7. **Error Handling**: Stops on first failure with detailed error message
+
+=== Examples
+
+[source,bash]
+----
+# Basic migration
+./bloomdb migrate --path ./migrations
+
+# With custom table name
+./bloomdb migrate --table-name "app_migrations"
+
+# With post-migration script
+./bloomdb migrate --post-migration-script ./scripts/post_migration.sql
+
+# Using environment variables
+export BLOOMDB_CONNECT_STRING="postgres://user:pass@localhost/db"
+export BLOOMDB_PATH="./migrations"
+./bloomdb migrate
+----
+
+== info
+
+Display migration status and database information.
+
+=== Usage
+
+[source,bash]
+----
+./bloomdb info [flags]
+----
+
+=== Flags
+
+[cols="2*"]
+|===
+| Flag | Description
+
+| `--path string` | Directory containing migration files (default: ".")
+| `--table-name string` | Migration table name (default: "BLOOMDB_VERSION")
+| `--conn string` | Database connection string
+| `--log-level string` | Log level (debug, info, warn, error, fatal, panic)
+| `--verbose` | Enable verbose output
+|===
+
+=== Output Format
+
+The `info` command displays a table with the following columns:
+
+* **Version**: Migration version number
+* **Description**: Migration description
+* **Type**: Migration type (versioned/repeatable)
+* **Status**: Migration status
+* **Installed On**: When migration was applied
+
+=== Migration Status Types
+
+[cols="2*"]
+|===
+| Status | Description
+
+| `success` | Migration completed successfully
+| `pending` | Migration not yet applied
+| `failed` | Migration failed during execution
+| `checksum` | Migration file was modified after being applied
+| `baseline` | Migration was baselined (skipped)
+| `below baseline` | Migration version is below baseline version
+|===
+
+=== Examples
+
+[source,bash]
+----
+# Basic status check
+./bloomdb info
+
+# With custom migration directory
+./bloomdb info --path ./sql/migrations
+
+# Using environment variables
+export BLOOMDB_CONNECT_STRING="sqlite:///app/data.db"
+./bloomdb info
+----
+
+== repair
+
+Repair migration records for manual recovery.
+
+=== Usage
+
+[source,bash]
+----
+./bloomdb repair [flags]
+----
+
+=== Flags
+
+[cols="2*"]
+|===
+| Flag | Description
+
+| `--table-name string` | Migration table name (default: "BLOOMDB_VERSION")
+| `--conn string` | Database connection string
+| `--log-level string` | Log level (debug, info, warn, error, fatal, panic)
+| `--verbose` | Enable verbose output
+|===
+
+=== When to Use
+
+* **Checksum mismatches**: When migration files were modified after being applied
+* **Manual recovery**: When you need to manually fix migration records
+* **Failed migrations**: After fixing failed migration SQL
+* **Data corruption**: When migration table records become inconsistent
+
+=== What It Does
+
+1. **Removes failed records**: Deletes all unsuccessful migration records
+2. **Updates checksums**: Recalculates and updates stored checksums to match current files
+3. **Validates records**: Ensures migration table is consistent
+
+=== Examples
+
+[source,bash]
+----
+# Basic repair
+./bloomdb repair
+
+# With custom table name
+./bloomdb repair --table-name "schema_migrations"
+
+# Using environment variables
+export BLOOMDB_CONNECT_STRING="postgres://user:pass@localhost/db"
+./bloomdb repair
+----
+
+== destroy
+
+Remove all database objects (use with extreme caution).
+
+=== Usage
+
+[source,bash]
+----
+./bloomdb destroy [flags]
+----
+
+=== Flags
+
+[cols="2*"]
+|===
+| Flag | Description
+
+| `--table-name string` | Migration table name (default: "BLOOMDB_VERSION")
+| `--conn string` | Database connection string
+| `--log-level string` | Log level (debug, info, warn, error, fatal, panic)
+| `--verbose` | Enable verbose output
+|===
+
+=== What It Does
+
+The `destroy` command:
+
+1. **Drops migration table**: Removes the version tracking table
+2. **Drops all objects**: Removes all tables, views, indexes, etc.
+3. **Requires confirmation**: Prompts for confirmation before proceeding
+4. **Logs actions**: Shows what objects are being dropped
+
+=== Safety Features
+
+* **Confirmation prompt**: Requires explicit confirmation before destroying
+* **Dry run mode**: Shows what would be destroyed without actually doing it
+* **Detailed logging**: Lists all objects that will be affected
+
+=== Examples
+
+[source,bash]
+----
+# Interactive destroy (requires confirmation)
+./bloomdb destroy
+
+# With custom table name
+./bloomdb destroy --table-name "app_migrations"
+
+# Using environment variables
+export BLOOMDB_CONNECT_STRING="sqlite:///test.db"
+./bloomdb destroy
+----
+
+=== Warning
+
+**DANGER**: This command will permanently delete all data and schema in your database. Use only for:
+
+* **Development environments**: When you want to completely reset the database
+* **Testing**: When setting up automated test environments
+* **Complete rebuilds**: When you're starting over with a fresh schema
+
+Never use this command on production databases unless you intend to delete all data.
+
+== Global Flags
+
+All commands support these global flags:
+
+[cols="2*"]
+|===
+| Flag | Short | Environment Variable | Description
+
+| `--conn string` | | `BLOOMDB_CONNECT_STRING` | Database connection string
+| `--path string` | | `BLOOMDB_PATH` | Directory containing migration files
+| `--table-name string` | | `BLOOMDB_VERSION_TABLE_NAME` | Migration table name
+| `--log-level string` | | `BLOOMDB_LOG_LEVEL` | Log level (debug, info, warn, error, fatal, panic)
+| `--verbose` | `-v` | `BLOOMDB_VERBOSE` | Enable verbose output
+| `--help` | `-h` | | Show command help
+|===
+
+== Exit Codes
+
+[cols="2*"]
+|===
+| Code | Description
+
+| `0` | Success
+| `1` | General error
+| `2` | Usage error (invalid flags, missing arguments)
+| `3` | Database connection error
+| `4` | Migration execution error
+| `5` | Checksum validation error
+|===
+
+== Getting Help
+
+[source,bash]
+----
+# Show main help
+./bloomdb --help
+
+# Show command-specific help
+./bloomdb migrate --help
+./bloomdb baseline --help
+./bloomdb info --help
+./bloomdb repair --help
+./bloomdb destroy --help
+----
+
+For more examples and advanced usage, see link:advanced-usage.adoc[Advanced Usage].

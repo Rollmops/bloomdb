@@ -1,0 +1,551 @@
+= Troubleshooting
+
+This guide covers common issues, error scenarios, and solutions for BloomDB.
+
+== Getting Help
+
+=== Command Help
+
+[source,bash]
+----
+# Show main help
+./bloomdb --help
+
+# Show command-specific help
+./bloomdb migrate --help
+./bloomdb baseline --help
+./bloomdb info --help
+./bloomdb repair --help
+./bloomdb destroy --help
+----
+
+=== Debug Mode
+
+Enable detailed logging to troubleshoot issues:
+
+[source,bash]
+----
+# Via environment variable
+export BLOOMDB_VERBOSE="1"
+export BLOOMDB_LOG_LEVEL="debug"
+./bloomdb migrate
+
+# Via command line
+./bloomdb migrate --verbose --log-level debug
+----
+
+=== Test Output Format
+
+Use test format for detailed debugging:
+
+[source,bash]
+----
+export BLOOMDB_PRINTER="test"
+./bloomdb migrate
+----
+
+== Common Issues
+
+=== Connection Problems
+
+**"Connection string required"**
+[source,bash]
+----
+# Check if environment variable is set
+echo $BLOOMDB_CONNECT_STRING
+
+# Set it if missing
+export BLOOMDB_CONNECT_STRING="postgres://user:pass@localhost/db"
+
+# Verify connection string format
+./bloomdb info --conn "postgres://user:pass@localhost/db"
+----
+
+**"Failed to connect to database"**
+[source,bash]
+----
+# Test connection manually
+psql "postgres://user:pass@localhost/db"  # PostgreSQL
+sqlite3 /path/to/db.db                     # SQLite
+sqlplus user/pass@localhost:1521/service     # Oracle
+
+# Common connection string issues:
+# - Wrong host/port
+# - Invalid credentials  
+# - Database doesn't exist
+# - Network connectivity issues
+# - SSL/TLS configuration
+----
+
+**"Database server not found"**
+[source,bash]
+----
+# Verify database server is running
+pg_isready -h localhost -p 5432  # PostgreSQL
+netstat -an | grep 5432              # Check port
+
+# Test network connectivity
+telnet localhost 5432
+ping localhost
+----
+
+=== Migration File Issues
+
+**"Migration directory not found"**
+[source,bash]
+----
+# Check if directory exists
+ls -la ./migrations
+
+# Verify permissions
+ls -ld ./migrations
+
+# Set correct path
+export BLOOMDB_PATH="./migrations"
+./bloomdb migrate
+----
+
+**"No migration files found"**
+[source,bash]
+----
+# Check file extensions
+ls -la ./migrations/*.sql
+
+# Verify naming convention
+ls -la ./migrations/V*.sql
+ls -la ./migrations/R*.sql
+
+# Valid examples:
+# V1__Create_users_table.sql
+# V2.1__Add_columns.sql
+# R__Create_triggers.sql
+----
+
+**"Invalid version format"**
+[source,bash]
+----
+# Error examples:
+# Vabc__migration.sql        (invalid: abc is not numeric)
+# V1__migration.sql.txt     (invalid: wrong extension)
+# create_table.sql             (invalid: missing prefix)
+
+# Valid formats:
+# V1__Create_users_table.sql
+# V2.1__Add_email_column.sql
+# V3.0.5__Add_indexes.sql
+# R__Create_triggers.sql
+----
+
+=== Database Table Issues
+
+**"Table 'BLOOMDB_VERSION' does not exist"**
+[source,bash]
+----
+# This is normal for new databases
+# Initialize with baseline command
+./bloomdb baseline
+
+# Or with custom table name
+export BLOOMDB_VERSION_TABLE_NAME="my_migrations"
+./bloomdb baseline
+----
+
+**"Permission denied"**
+[source,bash]
+----
+# Check database user permissions
+./bloomdb info --verbose
+
+# Common permission issues:
+# - No CREATE TABLE permission
+# - No INSERT permission on migration table
+# - No SELECT permission on schema
+# - Insufficient privileges for operations
+----
+
+=== SQL Execution Issues
+
+**"SQL syntax error"**
+[source,bash]
+----
+# Test SQL manually
+psql -d database -f migrations/V1__Create_table.sql
+
+# Common syntax issues:
+# - Missing semicolons
+# - Wrong quotes
+# - Reserved keywords as identifiers
+# - Database-specific syntax errors
+----
+
+**"Migration failed"**
+[source,bash]
+----
+# Check migration status
+./bloomdb info
+
+# Look for failed migrations
+# Failed migrations show "failed" status
+
+# Fix the SQL in the migration file
+# Then run repair to clean up failed records
+./bloomdb repair
+
+# Retry migration
+./bloomdb migrate
+----
+
+=== Checksum Issues
+
+**"Checksum validation failed"**
+[source,bash]
+----
+# Check which migrations have checksum issues
+./bloomdb info | grep "checksum"
+
+# This happens when migration files are modified after being applied
+
+# Options to resolve:
+# 1. Restore original file (if change was accidental)
+git checkout V1__Create_users_table.sql
+
+# 2. Update checksums (if change was intentional)
+./bloomdb repair
+
+# 3. Create new migration (if change is significant)
+cp V1__Create_users_table.sql V1.1__Modify_users_table.sql
+git checkout V1__Create_users_table.sql
+----
+
+**"File was modified after being applied"**
+[source,bash]
+----
+# Show what changed
+git diff V1__Create_users_table.sql
+
+# Review if change was intentional
+# If not, restore original:
+git checkout V1__Create_users_table.sql
+
+# If yes, update checksums:
+./bloomdb repair
+----
+
+== Performance Issues
+
+=== Slow Migrations
+
+**Identify Slow Migrations:**
+[source,bash]
+----
+# Use verbose output to see execution times
+./bloomdb migrate --verbose
+
+# Look for migrations taking long time
+# Output shows execution time for each migration
+----
+
+**Common Causes:**
+* **Large data operations**: Bulk inserts/updates
+* **Missing indexes**: Queries on unindexed columns
+* **Complex operations**: Expensive joins or calculations
+* **Lock contention**: Long-running transactions
+* **Network latency**: Remote database connections
+
+**Solutions:**
+[source,sql]
+----
+-- Use transactions for multiple operations
+BEGIN;
+CREATE TABLE users (...);
+CREATE INDEX idx_users_email ON users(email);
+COMMIT;
+
+-- Batch operations instead of individual statements
+INSERT INTO users (name, email) VALUES
+    ('user1', 'user1@example.com'),
+    ('user2', 'user2@example.com');
+
+-- Create indexes after data loading
+CREATE TABLE temp_data (...);
+-- Insert lots of data
+CREATE INDEX idx_temp_data_col ON temp_data(column);
+----
+
+=== Memory Issues
+
+**"Out of memory"**
+[source,bash]
+----
+# For SQLite: adjust cache size
+export BLOOMDB_CONNECT_STRING="sqlite:/path/to/db.db?cache_size=10000"
+
+# For PostgreSQL: check work_mem
+# Add to postgresql.conf or run in migration:
+SET work_mem = '256MB';
+
+# Monitor memory usage
+./bloomdb migrate --log-level debug
+----
+
+== Environment-Specific Issues
+
+=== Development Environment
+
+**"Database already exists" in tests**
+[source,bash]
+----
+# Clean test database before each test
+./bloomdb destroy --conn sqlite:./test.db
+
+# Or use in-memory database for tests
+export BLOOMDB_CONNECT_STRING="sqlite::memory:"
+./bloomdb migrate
+----
+
+**Migration conflicts in team development**
+[source,bash]
+----
+# Check current state
+./bloomdb info
+
+# Resolve conflicts by:
+# 1. Creating new migration instead of modifying existing
+# 2. Using baseline to establish common state
+# 3. Coordinating with team on migration order
+----
+
+### Staging Environment
+
+**"Schema drift" between staging and production**
+[source,bash]
+----
+# Compare migration status
+./bloomdb info --conn "$STAGING_DB" > staging_status.txt
+./bloomdb info --conn "$PROD_DB" > prod_status.txt
+diff staging_status.txt prod_status.txt
+
+# Resolve by applying missing migrations to target environment
+----
+
+### Production Environment
+
+**"Migration timeout"**
+[source,bash]
+----
+# Increase timeout in connection string
+export BLOOMDB_CONNECT_STRING="postgres://user:pass@host/db?connect_timeout=60"
+
+# Or run migrations individually
+# Identify problematic migration and fix it
+----
+
+## Advanced Troubleshooting
+
+=== Debug Mode Output
+
+Enable debug mode to see detailed internal state:
+
+[source,bash]
+----
+export BLOOMDB_LOG_LEVEL="debug"
+export BLOOMDB_VERBOSE="1"
+./bloomdb migrate
+----
+
+Debug output shows:
+* SQL queries being executed
+* Migration file parsing details
+* Database connection information
+* Checksum calculation details
+* Internal state changes
+
+=== Test Format for Automation
+
+Use test format for parsing output in scripts:
+
+[source,bash]
+----
+export BLOOMDB_PRINTER="test"
+MIGRATION_OUTPUT=$(./bloomdb info)
+
+# Parse output programmatically
+echo "$MIGRATION_OUTPUT" | grep "INFO:" | while read line; do
+    # Process each log line
+    echo "Processing: $line"
+done
+----
+
+=== JSON Format for APIs
+
+Use JSON format for integration with other tools:
+
+[source,bash]
+----
+export BLOOMDB_PRINTER="json"
+MIGRATION_OUTPUT=$(./bloomdb info)
+
+# Parse with jq
+echo "$MIGRATION_OUTPUT" | jq '.migrations[] | select(.status == "failed")'
+
+# Extract specific information
+FAILED_COUNT=$(echo "$MIGRATION_OUTPUT" | jq '.migrations | map(select(.status == "failed")) | length')
+echo "Failed migrations: $FAILED_COUNT"
+----
+
+== Recovery Procedures
+
+=== Complete Database Reset
+
+**WARNING**: This will delete all data!
+
+[source,bash]
+----
+# For development/test environments only
+./bloomdb destroy
+
+# Confirm when prompted
+# This removes all tables and migration tracking
+----
+
+### Partial Recovery
+
+**Recover from failed migration:**
+[source,bash]
+----
+# 1. Identify failed migration
+./bloomdb info
+
+# 2. Fix the SQL in migration file
+# Edit the problematic migration file
+
+# 3. Remove failed records
+./bloomdb repair
+
+# 4. Retry migration
+./bloomdb migrate
+----
+
+**Recover from checksum issues:**
+[source,bash]
+----
+# 1. Check what has checksum issues
+./bloomdb info | grep "⚠ checksum"
+
+# 2. Review changes
+git diff HEAD~1 V1__problematic_migration.sql
+
+# 3. Choose recovery method:
+#    a) Restore original file if change was accidental
+git checkout V1__problematic_migration.sql
+
+#    b) Update checksums if change was intentional
+./bloomdb repair
+
+#    c) Create new migration for the change
+cp V1__problematic_migration.sql V1.1__fix_issue.sql
+git checkout V1__problematic_migration.sql
+----
+
+=== Manual Database Repair
+
+**Direct database intervention:**
+[source,bash]
+----
+# Connect to database directly
+psql -d your_database
+
+# Manually fix migration table
+UPDATE BLOOMDB_VERSION 
+SET success = 1 
+WHERE version = '1' AND description = 'Problematic migration';
+
+# Then update checksums
+./bloomdb repair
+----
+
+**Use manual repair only when:**
+* BloomDB commands cannot fix the issue
+* You understand the database schema
+* You have database backups
+* You've documented the manual changes
+
+== Getting Support
+
+### Before Requesting Help
+
+1. **Check this guide** - Most common issues are covered here
+2. **Search existing issues** - Check GitHub Issues for similar problems
+3. **Gather information** - Collect error messages, environment details
+4. **Reproduce issue** - Try to reproduce the problem consistently
+
+### Information to Provide
+
+When requesting help, provide:
+
+[source,bash]
+----
+# BloomDB version
+./bloomdb --version
+
+# Environment information
+echo "Go version: $(go version)"
+echo "OS: $(uname -a)"
+echo "Database type: [postgresql/sqlite/oracle]"
+
+# Connection details (remove sensitive data)
+echo "Connection format: [postgres://user:pass@host/db]"
+
+# Error message
+./bloomdb migrate 2>&1
+
+# Migration files (show structure)
+ls -la migrations/
+head -5 migrations/V*.sql
+----
+
+### Community Resources
+
+* **GitHub Issues**: https://github.com/rollmops/bloomdb/issues
+* **GitHub Discussions**: https://github.com/rollmops/bloomdb/discussions
+* **Documentation**: https://github.com/rollmops/bloomdb/tree/main/docs
+* **Integration Tests**: https://github.com/rollmops/bloomdb/tree/main/integration-tests
+
+### Professional Support
+
+[Add information about professional support options if available]
+
+== Prevention
+
+### Best Practices to Avoid Issues
+
+**Before Running Migrations:**
+* Test migrations in staging environment first
+* Backup production database before migrations
+* Review migration SQL for syntax errors
+* Verify database connectivity and permissions
+* Check for sufficient disk space
+
+**During Development:**
+* Use version control for all migration files
+* Write descriptive commit messages
+* Review changes with team members
+* Test with different database versions
+* Document complex migrations
+
+**In Production:**
+* Use appropriate log levels (warn/error)
+* Monitor migration execution times
+* Set up alerts for migration failures
+* Plan rollback procedures
+* Schedule migrations during maintenance windows
+
+### Regular Maintenance
+
+* **Regular testing**: Test migration process periodically
+* **Monitor logs**: Check for warnings or errors
+* **Update dependencies**: Keep BloomDB and database drivers updated
+* **Review migrations**: Periodically review migration history
+* **Backup procedures**: Regularly test backup and restore procedures
+
+For additional help, see the link:index.html[Documentation Index].
