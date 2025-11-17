@@ -80,4 +80,14 @@ For comprehensive documentation, see the link:docs/[docs directory](docs/index.a
 
 == License
 
-[Add your license information here]
+BloomDB is licensed under the MIT License. See the link:LICENSE[LICENSE] file for details.
+
+This means you are free to:
+
+* **Use** - Use BloomDB for any purpose, including commercial applications
+* **Modify** - Change the source code to suit your needs
+* **Distribute** - Share BloomDB with others
+* **Sublicense** - Include BloomDB in larger projects
+* **Sell** - Use BloomDB in commercial products
+
+Under the simple condition that you include the copyright notice and license text in all copies or substantial portions of the software.

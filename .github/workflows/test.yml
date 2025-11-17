@@ -46,7 +46,7 @@ jobs:
     - name: Run tests with coverage
       run: |
         echo "Running tests with coverage for Go ${{ matrix.go-version }}"
-        go test -v -short -coverprofile=coverage.out -covermode=atomic -timeout 5m ./...
+        go test -v -race -coverprofile=coverage.out -covermode=atomic -timeout 5m ./...
         echo "Coverage file created:"
         ls -la coverage.out || echo "Coverage file not found"
     
