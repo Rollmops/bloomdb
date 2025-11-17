@@ -106,8 +106,8 @@ func TestSQLiteIntegrationScript(t *testing.T) {
 		}
 		defer db.Close()
 
-		// Use the correct column names with quotes
-		rows, err := db.Query(`SELECT "installed rank", "version", "description", "type", "success" FROM BLOOMDB_VERSION ORDER BY "installed rank"`)
+		// Use the correct column names
+		rows, err := db.Query(`SELECT installed_rank, version, description, type, success FROM BLOOMDB_VERSION ORDER BY installed_rank`)
 		if err != nil {
 			// Don't fail the test if table doesn't exist (expected after destroy)
 			t.Logf("%s - Migration table does not exist (expected after destroy): %v", description, err)
