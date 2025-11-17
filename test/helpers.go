@@ -104,20 +104,35 @@ func ParseTestOutput(output string) ([]TestOutput, error) {
 			continue
 		}
 
-		// Check if this is a LEVEL: line (ends SQL block if we're inside one)
+		// Check if this is a LEVEL: line or [LEVEL] line (ends SQL block if we're inside one)
+		var level, message string
+		var isLevelLine bool
+
+		// Try format: LEVEL: message
 		parts := strings.SplitN(line, ":", 2)
 		if len(parts) == 2 {
-			// This is a potential LEVEL: line
-			level := strings.TrimSpace(parts[0])
-			// Check if it's a valid log level
-			if level == "INFO" || level == "SUCCESS" || level == "ERROR" || level == "WARNING" || level == "DEBUG" {
-				insideSQLBlock = false
-				results = append(results, TestOutput{
-					Level:   level,
-					Message: strings.TrimSpace(parts[1]),
-				})
-				continue
+			level = strings.TrimSpace(parts[0])
+			message = strings.TrimSpace(parts[1])
+			isLevelLine = level == "INFO" || level == "SUCCESS" || level == "ERROR" || level == "WARNING" || level == "DEBUG"
+		}
+
+		// Try format: [LEVEL] message
+		if !isLevelLine && strings.HasPrefix(line, "[") && strings.Contains(line, "]") {
+			closeBracket := strings.Index(line, "]")
+			if closeBracket > 1 {
+				level = strings.TrimSpace(line[1:closeBracket])
+				message = strings.TrimSpace(line[closeBracket+1:])
+				isLevelLine = level == "INFO" || level == "SUCCESS" || level == "ERROR" || level == "WARNING" || level == "DEBUG"
 			}
+		}
+
+		if isLevelLine {
+			insideSQLBlock = false
+			results = append(results, TestOutput{
+				Level:   level,
+				Message: message,
+			})
+			continue
 		}
 
 		// Skip lines inside SQL blocks (multi-line SQL statements)

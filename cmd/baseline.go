@@ -3,6 +3,9 @@ package cmd
 type BaselineCommand struct{}
 
 func (b *BaselineCommand) Run() {
+	// Initialize printer first to ensure verbose output works
+	InitPrinter()
+
 	// Setup database connection first (needed for version resolution)
 	setup := SetupDatabase()
 
