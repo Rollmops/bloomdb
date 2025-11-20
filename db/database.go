@@ -14,6 +14,7 @@ const (
 	SQLite     DatabaseType = "sqlite"
 	PostgreSQL DatabaseType = "postgresql"
 	Oracle     DatabaseType = "oracle"
+	MySQL      DatabaseType = "mysql"
 )
 
 type Database interface {

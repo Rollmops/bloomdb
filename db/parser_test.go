@@ -44,10 +44,10 @@ func TestParseDatabaseType(t *testing.T) {
 			expectError:      true,
 		},
 		{
-			name:             "MySQL connection string (unsupported)",
+			name:             "MySQL connection string",
 			connectionString: "mysql://user:password@localhost/test",
-			expectedType:     "",
-			expectError:      true,
+			expectedType:     MySQL,
+			expectError:      false,
 		},
 	}
 

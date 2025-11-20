@@ -15,6 +15,9 @@ func ParseDatabaseType(connectionString string) (DatabaseType, error) {
 	if strings.HasPrefix(connectionString, "oracle://") {
 		return Oracle, nil
 	}
+	if strings.HasPrefix(connectionString, "mysql://") || strings.HasPrefix(connectionString, "mysql:") {
+		return MySQL, nil
+	}
 
 	return "", fmt.Errorf("unable to determine database type from connection string: %s", connectionString)
 }
@@ -32,6 +35,13 @@ func ExtractConnectionString(connectionString string) (string, error) {
 		return connectionString, nil
 	case Oracle:
 		return connectionString, nil
+	case MySQL:
+		// MySQL driver expects DSN without scheme, but we might receive it with scheme
+		// Standard format: user:password@tcp(host:port)/dbname
+		// If it starts with mysql://, strip it
+		clean := strings.TrimPrefix(connectionString, "mysql://")
+		clean = strings.TrimPrefix(clean, "mysql:")
+		return clean, nil
 	default:
 		return "", fmt.Errorf("unsupported database type")
 	}

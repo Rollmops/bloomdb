@@ -12,6 +12,8 @@ func NewDatabase(dbType DatabaseType) (Database, error) {
 		return NewPostgreSQLDatabase(), nil
 	case Oracle:
 		return NewOracleDatabase(), nil
+	case MySQL:
+		return NewMySQLDatabase(), nil
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", dbType)
 	}

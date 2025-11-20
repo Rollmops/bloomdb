@@ -3,7 +3,7 @@
 image:https://github.com/rollmops/bloomdb/workflows/Tests/badge.svg["Build Status", link="https://github.com/rollmops/bloomdb/actions"]
 image:https://codecov.io/gh/rollmops/bloomdb/branch/main/graph/badge.svg["Coverage", link="https://codecov.io/gh/rollmops/bloomdb"]
 
-BloomDB is a powerful database migration tool that supports multiple database backends including PostgreSQL, SQLite, and Oracle. It provides versioned and repeatable migrations with proper tracking and error handling.
+BloomDB is a powerful database migration tool that supports multiple database backends including PostgreSQL, SQLite, MySQL, and Oracle. It provides versioned and repeatable migrations with proper tracking and error handling.
 
 == Quick Start
 
@@ -76,6 +76,7 @@ export BLOOMDB_CONNECT_STRING="your-database-connection"
 
 * **PostgreSQL**: `postgres://user:password@localhost:5432/database?sslmode=disable`
 * **SQLite**: `sqlite:/path/to/database.db`
+* **MySQL**: `mysql://user:password@tcp(localhost:3306)/database`
 * **Oracle**: `oracle://user:password@localhost:1521/service_name`
 
 == Documentation
@@ -91,7 +92,7 @@ For comprehensive documentation, see the link:docs/[docs directory](docs/index.a
 
 == Features
 
-* **Multi-database support**: PostgreSQL, SQLite, Oracle
+* **Multi-database support**: PostgreSQL, SQLite, MySQL, Oracle
 * **Versioned migrations**: Ordered migration execution with version tracking
 * **Repeatable migrations**: Re-applyable migrations for triggers, views, etc.
 * **Checksum validation**: Flyway-compatible CRC32 checksums detect modified migrations
