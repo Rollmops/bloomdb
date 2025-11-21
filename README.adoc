@@ -5,6 +5,8 @@ image:https://codecov.io/gh/rollmops/bloomdb/branch/main/graph/badge.svg["Covera
 
 BloomDB is a powerful database migration tool that supports multiple database backends including PostgreSQL, SQLite, MySQL, and Oracle. It provides versioned and repeatable migrations with proper tracking and error handling.
 
+image:demo.gif["BloomDB Demo", align="center"]
+
 == Quick Start
 
 === Installation
