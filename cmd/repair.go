@@ -8,7 +8,40 @@ import (
 type RepairCommand struct{}
 
 func (r *RepairCommand) Run() {
-	setup := SetupDatabase()
+	// Detect migration directories (root or subdirectories)
+	migrationDirs, err := loader.DetectMigrationDirectories(migrationPath)
+	if err != nil {
+		PrintError("Error detecting migration directories: %v", err)
+		return
+	}
+
+	// Process each migration directory
+	for _, migDir := range migrationDirs {
+		if migDir.IsSubdirectory {
+			PrintInfo("Processing subdirectory: %s (table: %s)", migDir.Name, migDir.VersionTable)
+		} else {
+			PrintInfo("Processing migration directory: %s", migDir.Path)
+		}
+
+		// Process repair for this directory
+		err := r.processRepairDirectory(migDir)
+		if err != nil {
+			PrintError("Error processing repair for directory %s: %v", migDir.Path, err)
+			return
+		}
+	}
+
+	PrintSuccess("All migration directories repaired successfully")
+}
+
+func (r *RepairCommand) processRepairDirectory(migDir loader.MigrationDirectory) error {
+	// Setup database connection with appropriate table name
+	var setup *DatabaseSetup
+	if migDir.VersionTable != "" {
+		setup = SetupDatabaseWithTableName(migDir.VersionTable)
+	} else {
+		setup = SetupDatabase()
+	}
 
 	// Ensure migration table and baseline record exist (repair should only work on initialized databases)
 	setup.EnsureTableAndBaselineExist()
@@ -18,27 +51,25 @@ func (r *RepairCommand) Run() {
 	err := setup.DeleteFailedMigrationRecords()
 	if err != nil {
 		PrintError("Error removing failed migration records: %v", err)
-		return
+		return err
 	}
 	PrintSuccess("Failed migration records removed")
 
 	// Step 2: Align checksums and descriptions of versioned migration files to existing entries
 	PrintInfo("Step 2: Aligning checksums and descriptions...")
-	err = alignMigrationChecksumsAndDescriptions(setup)
+	err = alignMigrationChecksumsAndDescriptions(setup, migDir.Path)
 	if err != nil {
 		PrintError("Error aligning migration checksums and descriptions: %v", err)
-		return
+		return err
 	}
 	PrintSuccess("Migration checksums and descriptions aligned")
 
-	PrintSuccess("Repair completed successfully")
+	PrintSuccess("Repair completed successfully for directory: %s", migDir.Path)
+	return nil
 }
 
 // alignMigrationChecksumsAndDescriptions updates migration records to match current files
-func alignMigrationChecksumsAndDescriptions(setup *DatabaseSetup) error {
-	// Get migration path
-	migrationPath := GetMigrationPath()
-
+func alignMigrationChecksumsAndDescriptions(setup *DatabaseSetup, migrationPath string) error {
 	// Load versioned migrations from filesystem
 	versionedLoader := loader.NewVersionedMigrationLoader(migrationPath)
 	versionedMigrations, err := versionedLoader.LoadMigrations()

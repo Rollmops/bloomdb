@@ -3,6 +3,7 @@ package cmd
 import (
 	"bloomdb/db"
 	"bloomdb/loader"
+	"fmt"
 )
 
 type InfoCommand struct{}
@@ -11,32 +12,59 @@ func (i *InfoCommand) Run() {
 	// Get migration path from root command
 	migrationPath := GetMigrationPath()
 
-	// Setup database connection
-	setup := SetupDatabase()
+	// Detect migration directories (root or subdirectories)
+	migrationDirs, err := loader.DetectMigrationDirectories(migrationPath)
+	if err != nil {
+		PrintError("Error detecting migration directories: %v", err)
+		return
+	}
+
+	// Process each migration directory
+	for _, migDir := range migrationDirs {
+		if migDir.IsSubdirectory {
+			PrintInfo("=== Subdirectory: %s (table: %s) ===", migDir.Name, migDir.VersionTable)
+		} else {
+			PrintInfo("=== Migration directory: %s ===", migDir.Path)
+		}
+
+		// Process info for this directory
+		err := i.processInfoDirectory(migDir)
+		if err != nil {
+			PrintError("Error processing info for directory %s: %v", migDir.Path, err)
+			return
+		}
+	}
+}
+
+func (i *InfoCommand) processInfoDirectory(migDir loader.MigrationDirectory) error {
+	// Setup database connection with appropriate table name
+	var setup *DatabaseSetup
+	if migDir.VersionTable != "" {
+		setup = SetupDatabaseWithTableName(migDir.VersionTable)
+	} else {
+		setup = SetupDatabase()
+	}
 
 	// Ensure migration table and baseline record exist
 	setup.EnsureTableAndBaselineExist()
 
 	// Load migrations from filesystem
-	versionedLoader := loader.NewVersionedMigrationLoader(migrationPath)
+	versionedLoader := loader.NewVersionedMigrationLoader(migDir.Path)
 	versionedMigrations, err := versionedLoader.LoadMigrations()
 	if err != nil {
-		PrintError("Error loading versioned migrations: " + err.Error())
-		return
+		return fmt.Errorf("error loading versioned migrations: %w", err)
 	}
 
-	repeatableLoader := loader.NewRepeatableMigrationLoader(migrationPath)
+	repeatableLoader := loader.NewRepeatableMigrationLoader(migDir.Path)
 	repeatableMigrations, err := repeatableLoader.LoadRepeatableMigrations()
 	if err != nil {
-		PrintError("Error loading repeatable migrations: " + err.Error())
-		return
+		return fmt.Errorf("error loading repeatable migrations: %w", err)
 	}
 
 	// Get existing migration records from database
 	existingRecords, err := setup.GetMigrationRecords()
 	if err != nil {
-		PrintError("Error reading migration records: " + err.Error())
-		return
+		return fmt.Errorf("error reading migration records: %w", err)
 	}
 
 	// Find baseline version
@@ -47,6 +75,8 @@ func (i *InfoCommand) Run() {
 
 	// Display the table
 	DisplayMigrationTable(setup.DBType, setup.TableName, statuses)
+
+	return nil
 }
 
 // buildMigrationStatuses creates a comprehensive list of migration statuses

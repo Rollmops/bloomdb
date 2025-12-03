@@ -15,9 +15,9 @@ type DatabaseSetup struct {
 	TableName string
 }
 
-// SetupDatabase performs the common database setup steps used across commands
+// SetupDatabaseWithTableName performs database setup with a custom table name
 // Returns DatabaseSetup on success, exits on error
-func SetupDatabase() *DatabaseSetup {
+func SetupDatabaseWithTableName(tableName string) *DatabaseSetup {
 	// Validate connection string
 	if dbConnStr == "" {
 		PrintError("connection string is required")
@@ -27,7 +27,6 @@ func SetupDatabase() *DatabaseSetup {
 	var database db.Database
 	var connStr string
 	var dbType db.DatabaseType
-	var tableName string
 
 	// Use defer to ensure cleanup on any error during setup
 	defer func() {
@@ -88,9 +87,6 @@ func SetupDatabase() *DatabaseSetup {
 		os.Exit(1)
 	}
 
-	// Get table name from command configuration
-	tableName = GetVersionTableName()
-
 	setup := &DatabaseSetup{
 		Database:  database,
 		ConnStr:   connStr,
@@ -102,6 +98,14 @@ func SetupDatabase() *DatabaseSetup {
 	SetGlobalDatabaseSetup(setup)
 
 	return setup
+}
+
+// SetupDatabase performs the common database setup steps used across commands
+// Returns DatabaseSetup on success, exits on error
+func SetupDatabase() *DatabaseSetup {
+	// Get table name from command configuration
+	tableName := GetVersionTableName()
+	return SetupDatabaseWithTableName(tableName)
 }
 
 func (ds *DatabaseSetup) CreateMigrationTable() error {

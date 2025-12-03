@@ -77,6 +77,73 @@ For comprehensive documentation, see the link:docs/[docs directory](docs/index.a
 * **Error handling**: Failed migrations stop execution and aren't recorded
 * **Baseline support**: Initialize existing databases with migration tracking
 * **Database-specific filtering**: Support for database-specific migration variants
+* **Subdirectory migrations**: Multi-tenant and multi-schema support with isolated migration histories
+
+== Multi-Tenant & Multi-Schema Support
+
+BloomDB supports organizing migrations into subdirectories, perfect for multi-tenant SaaS applications or managing multiple database schemas independently.
+
+=== How It Works
+
+When the migration path contains subdirectories without any migrations at the root level, BloomDB automatically processes each subdirectory as an independent migration context with its own version table.
+
+[source]
+----
+migrations/
+├── tenant-a/
+│   ├── V1__create_users.sql
+│   └── V2__add_email.sql
+└── tenant-b/
+    ├── V1__create_users.sql
+    └── V2__add_name.sql
+----
+
+=== Version Table Naming
+
+Each subdirectory gets its own version table:
+
+* Pattern: `BLOOMDB_<DIRNAME>`
+* Directory name is uppercased
+* Hyphens replaced with underscores
+
+Examples:
+
+* `tenant-a/` → version table `BLOOMDB_TENANT_A`
+* `tenant_b/` → version table `BLOOMDB_TENANT_B`
+* `schema-prod/` → version table `BLOOMDB_SCHEMA_PROD`
+
+=== Usage
+
+All commands work with subdirectories:
+
+[source,bash]
+----
+# Initialize all subdirectories
+./bloomdb baseline --path ./migrations
+
+# Migrate all subdirectories
+./bloomdb migrate --path ./migrations
+
+# Check status for all subdirectories
+./bloomdb info --path ./migrations
+
+# Repair all subdirectories
+./bloomdb repair --path ./migrations
+----
+
+=== Important Notes
+
+* **Root migrations take precedence**: If migrations exist at the root level, subdirectories are ignored
+* **Depth 1 only**: BloomDB only processes immediate subdirectories, not nested ones
+* **Independent histories**: Each subdirectory maintains its own migration history, baseline, and checksums
+* **Empty subdirectories ignored**: Subdirectories without migration files are skipped
+
+=== Use Cases
+
+* **Multi-tenant SaaS**: Separate migration history per tenant
+* **Multi-schema databases**: Independent schema evolution
+* **Environment-specific migrations**: Different migrations for dev/staging/prod
+* **Microservices**: Per-service database migrations in a monorepo
 
 == License
 

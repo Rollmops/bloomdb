@@ -24,8 +24,40 @@ type PostMigrationData struct {
 }
 
 func (m *MigrateCommand) Run() {
-	// Setup database connection
-	setup := SetupDatabase()
+	// Detect migration directories (root or subdirectories)
+	migrationDirs, err := loader.DetectMigrationDirectories(migrationPath)
+	if err != nil {
+		PrintError("Error detecting migration directories: %v", err)
+		return
+	}
+
+	// Process each migration directory
+	for _, migDir := range migrationDirs {
+		if migDir.IsSubdirectory {
+			PrintInfo("Processing subdirectory: %s (table: %s)", migDir.Name, migDir.VersionTable)
+		} else {
+			PrintInfo("Processing migration directory: %s", migDir.Path)
+		}
+
+		// Process migrations for this directory
+		err := m.processMigrationDirectory(migDir)
+		if err != nil {
+			PrintError("Error processing migration directory %s: %v", migDir.Path, err)
+			return
+		}
+	}
+
+	PrintSuccess("All migration directories processed successfully")
+}
+
+func (m *MigrateCommand) processMigrationDirectory(migDir loader.MigrationDirectory) error {
+	// Setup database connection with appropriate table name
+	var setup *DatabaseSetup
+	if migDir.VersionTable != "" {
+		setup = SetupDatabaseWithTableName(migDir.VersionTable)
+	} else {
+		setup = SetupDatabase()
+	}
 
 	// Ensure migration table and baseline record exist
 	setup.EnsureTableAndBaselineExist()
@@ -37,25 +69,22 @@ func (m *MigrateCommand) Run() {
 	}
 
 	// Load migrations from filesystem
-	versionedLoader := loader.NewVersionedMigrationLoader(migrationPath)
+	versionedLoader := loader.NewVersionedMigrationLoader(migDir.Path)
 	versionedMigrations, err := versionedLoader.LoadMigrations()
 	if err != nil {
-		PrintError("Error loading versioned migrations: %v", err)
-		return
+		return fmt.Errorf("error loading versioned migrations: %w", err)
 	}
 
-	repeatableLoader := loader.NewRepeatableMigrationLoader(migrationPath)
+	repeatableLoader := loader.NewRepeatableMigrationLoader(migDir.Path)
 	repeatableMigrations, err := repeatableLoader.LoadRepeatableMigrations()
 	if err != nil {
-		PrintError("Error loading repeatable migrations: %v", err)
-		return
+		return fmt.Errorf("error loading repeatable migrations: %w", err)
 	}
 
 	// Read existing migration records
 	records, err := setup.GetMigrationRecords()
 	if err != nil {
-		PrintError("Error reading migration records: %v", err)
-		return
+		return fmt.Errorf("error reading migration records: %w", err)
 	}
 
 	// Check for failed migrations (success = 0)
@@ -68,7 +97,7 @@ func (m *MigrateCommand) Run() {
 				return "repeatable"
 			}())
 			PrintWarning("Please run the repair command to fix failed migrations before continuing.")
-			return
+			return fmt.Errorf("failed migration found")
 		}
 	}
 
@@ -81,7 +110,7 @@ func (m *MigrateCommand) Run() {
 		}
 		PrintWarning("Migration files have been modified after being applied.")
 		PrintWarning("Please run the repair command to update checksums, or restore the original files.")
-		return
+		return fmt.Errorf("checksum validation failed")
 	}
 
 	// Find the greatest version in the database
@@ -105,7 +134,7 @@ func (m *MigrateCommand) Run() {
 			if err != nil {
 				PrintError("Migration %s failed: %v", migration, err)
 				PrintError("Migration process stopped due to failure at step %d/%d", i+1, len(pendingMigrations))
-				return
+				return fmt.Errorf("migration %s failed: %w", migration, err)
 			}
 			PrintSuccess("Successfully executed migration: %s (%dms)", migration, executionTime)
 		}
@@ -116,8 +145,7 @@ func (m *MigrateCommand) Run() {
 		// Get updated migration records after versioned migrations
 		updatedRecords, err := setup.GetMigrationRecords()
 		if err != nil {
-			PrintError("Error reading updated migration records: %v", err)
-			return
+			return fmt.Errorf("error reading updated migration records: %w", err)
 		}
 
 		// Find repeatable migrations that need to be executed
@@ -138,19 +166,21 @@ func (m *MigrateCommand) Run() {
 				if err != nil {
 					PrintError("Repeatable migration %s failed: %v", migration.Description, err)
 					PrintError("Migration process stopped due to failure at step %d/%d", i+1, len(pendingRepeatable))
-					return
+					return fmt.Errorf("repeatable migration %s failed: %w", migration.Description, err)
 				}
 				PrintSuccess("Successfully executed repeatable migration: %s (%dms)", migration.Description, executionTime)
 			}
 		}
 	}
 
-	PrintSuccess("Migration process completed successfully")
+	PrintSuccess("Migration process completed for directory: %s", migDir.Path)
 
 	// Execute post-migration script if it exists
-	if err := executePostMigrationScript(setup, migrationPath, postMigrationScript, initialObjects); err != nil {
+	if err := executePostMigrationScript(setup, migDir.Path, postMigrationScript, initialObjects); err != nil {
 		PrintWarning("Post-migration script failed: %v", err)
 	}
+
+	return nil
 }
 
 // findGreatestVersion finds the greatest version among existing migration records

@@ -24,6 +24,12 @@
 - **Migration Naming**: Versioned `V<version>__<description>[.<filter>].sql`, Repeatable `R__<description>[.<filter>].sql`
 - **Version Grouping**: Versioned migrations group by version number ONLY (not description); `V1.0__users.sql` and `V1.0__postgres.postgres.sql` = same version; repeatable migrations group by description
 
+## Subdirectory Migration Support
+- If migration path contains subdirectories and no versioned/repeatable migrations at root level, iterate through subdirectories (depth 1)
+- Each subdirectory is treated as separate migration directory with its own version table
+- Version table naming: `BLOOMDB_<DIRNAME>` where dirname is uppercased and hyphens replaced with underscores
+- Example: `migrations/tenant-a/` → version table `BLOOMDB_TENANT_A`, `migrations/schema_b/` → version table `BLOOMDB_SCHEMA_B`
+
 ## Code Style Guidelines
 - **Imports**: Group in order: stdlib → third-party → local (bloomdb/); use absolute imports (`"bloomdb/db"`)
 - **Naming**: PascalCase for exported (MigrateCommand, TableExists), camelCase for unexported (dbConnStr, maxRank)

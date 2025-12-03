@@ -29,9 +29,34 @@
 - Files that look like migrations but have invalid format (e.g., `Vabc__invalid.sql`) return errors
 - Non-migration files in the migrations directory are silently ignored
 
+# Subdirectory Migration Support
+
+- BloomDB supports organizing migrations into subdirectories for multi-tenant or multi-schema scenarios
+- Subdirectory detection algorithm:
+  1. Check if the migration path contains any versioned or repeatable migrations at the root level
+  2. If YES: Process only the root directory (ignore subdirectories)
+  3. If NO: Iterate through subdirectories (depth 1 only) and process each as a separate migration directory
+- Each subdirectory is treated as an independent migration directory with its own version table
+- Version table naming for subdirectories:
+  - Pattern: `BLOOMDB_<DIRNAME>` where DIRNAME is the subdirectory name
+  - Directory name is uppercased
+  - Hyphens (-) are replaced with underscores (_)
+  - Examples:
+    - `migrations/tenant-a/` → version table `BLOOMDB_TENANT_A`
+    - `migrations/tenant_b/` → version table `BLOOMDB_TENANT_B`
+    - `migrations/schema1/` → version table `BLOOMDB_SCHEMA1`
+- All commands (baseline, migrate, info, repair) support subdirectory processing
+- Subdirectories without any migration files are ignored
+- When processing subdirectories, each directory is processed independently with its own:
+  - Version table
+  - Baseline record
+  - Migration history
+  - Checksum validation
+
 # Version Table
  
 - the tool uses a version table that is specified by the env variable BLOOMDB_VERSION_TABLE_NAME and defaults to BLOOMDB_VERSION
+- for subdirectory migrations, the version table name is automatically derived from the subdirectory name (see Subdirectory Migration Support above)
 - the table is created only when running the baseline command
 - if the table is already there, skip creation
 - when running the baseline command, baseline record will be created in the version table:
