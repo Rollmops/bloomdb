@@ -1,0 +1,62 @@
+# Codecov configuration for BloomDB
+# https://docs.codecov.com/docs/codecov-yaml
+
+coverage:
+  precision: 2
+  round: down
+  range: "70...100"
+  
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        informational: false
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+        informational: false
+
+# Ignore patterns - files that shouldn't count toward coverage
+ignore:
+  - "main.go"                           # Entry point, hard to unit test
+  - "**/*_test.go"                      # Test files themselves
+  - "test/*.go"                         # Test helper files
+  - "integration_test/**"               # Integration tests
+  - "integration-tests/**"              # Integration test scripts
+  - "migrations/**"                     # SQL migration files
+  - "docs/**"                           # Documentation
+  - "cmd/root.go"                       # CLI setup, covered by integration tests
+
+# Comment on PRs with coverage changes
+comment:
+  layout: "header, diff, changes, components, footer"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+
+# Component coverage breakdown
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+  individual_components:
+    - component_id: cmd
+      name: "Commands"
+      paths:
+        - cmd/**
+    - component_id: db
+      name: "Database"
+      paths:
+        - db/**
+    - component_id: loader
+      name: "Migration Loader"
+      paths:
+        - loader/**
+    - component_id: printer
+      name: "Output Printer"
+      paths:
+        - printer/**
